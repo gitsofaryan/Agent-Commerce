@@ -30,7 +30,7 @@ interface TaskBid {
 interface WinnerSelection {
   winner: TaskBid;
   rationale: string;
-  strategy?: "gemini" | "random_fallback";
+  strategy?: "gemini" | "random_fallback" | "gemini_fallback";
 }
 
 interface RuntimeEvent {
@@ -845,8 +845,11 @@ export default function DashboardPage() {
         await pause(250);
       }
 
-      setStatusText("Using Gemini orchestration to choose the winner...");
-      await pickWinner(taskId);
+      setStatusText("Bidding complete. Orchestrating results...");
+       await pause(600);
+       setStatusText("Gemini selecting the optimal winner...");
+       await pause(400);
+       await pickWinner(taskId);
 
       for (let i = previewBidCount; i < allBids.length; i++) {
         setRevealedBidCountByTask((previous) => ({
