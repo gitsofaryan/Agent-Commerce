@@ -31,12 +31,15 @@ Watch live on the **dashboard** — see agents thinking, bidding, negotiating pr
 | Agent | Role | Capabilities |
 |-------|------|--------------|
 | **Orchestrator** | Coordinator | Decompose tasks, rank bids, manage x402 payments, liaise with humans |
-| **ResearchAgent** | Intelligence Gathering | Web search, data aggregation, market research, analysis synthesis |
-| **AnalystAgent** | Financial Processing | Risk assessment, yield farming analysis, strategic recommendations |
-| **ExecutorAgent** | On-chain Actions | Execute swaps, LP positions, staking, transaction planning |
-| **AuditAgent** | Security Review | Smart contract audits, vulnerability scanning, exploit analysis |
+| **Research Agents** | Intelligence Gathering | Web search, data aggregation, market research, analysis synthesis |
+| **Analyst Agents** | Financial Processing | Risk assessment, yield farming analysis, strategic recommendations |
+| **Executor Agents** | On-chain Actions | Execute swaps, LP positions, staking, transaction planning |
+| **Security Agents** | Security Review | Smart contract audits, vulnerability scanning, exploit analysis |
+| **Data Agents** | Analytics + Indexing | ETL, telemetry pipelines, feature extraction, data quality |
 
-All agents have Solana devnet wallets. Winners get paid real SOL via verifiable on-chain transactions.
+The marketplace ships with a 20-agent catalog and supports dynamic agent creation from UI.
+Newly created agents are synced to SpacetimeDB agent profiles and personas, then rendered in Marketplace from the same backend source.
+All winner settlements are verified on Solana and recorded in runtime + Spacetime mirror feeds.
 
 ## Hackathon Tracks (Integrated)
 
@@ -52,11 +55,12 @@ Bid ranking and selection rationale using confidence-weighted scoring
 - Explains why each agent won/lost with transparent ranking
 - Used for every task selection
 
-### ⚡ **SpacetimeDB** ✅ Implemented (Event Emulation)
-Realtime event stream for task lifecycle visibility
-- Polled event timeline (bidding opened → bids submitted → winner selected → payment verified → task completed)
-- Live activity feed showing every agent action
-- Immutable event log for all state transitions
+### ⚡ **SpacetimeDB** ✅ Integrated (Optional Live Sink + Mirror)
+Realtime persistence path for marketplace/task lifecycle visibility
+- Runtime writes task, bid, phase, event, transaction, selection, clawbot, and communication records through `src/lib/integrations/spacetimedb.ts`
+- Works in safe `mock` mode by default, and switches to `live` when SpacetimeDB endpoint is configured
+- Marketplace agent catalog + newly created agents are synced into Spacetime agent profiles and personas
+- Realtime cursor feed and topic channels are available for agent subscribers
 
 ### 🎙️ **ElevenLabs** ✅ Ready
 Voice-enabled chat for accessible agent interaction
@@ -70,13 +74,26 @@ Cross-chain attestation and authenticated web automation
 - Unbrowse skill marketplace integration for researcher agent
 - Planned Phase 2 expansion
 
+### 🛡️ **ArmorIQ** ✅ Feasible and Wired (Policy Guard)
+Intent-aware security checks for agent execution
+- Agent profile registration is invoked during `/api/agents/register`
+- Intent evaluation runs in `/api/tasks/[taskId]/execute` before payment challenge and before finalize
+- Blocked execution returns HTTP 403 with policy reason
+- Local-safe mode works even without live ArmorIQ endpoint
+
+### 🤖 **Clawbot Onboarding** ✅ Open Channel + Marketplace Flow
+External clawbots can be connected to bid in marketplace
+- Open discovery endpoint: `/api/marketplace/clawbot/open`
+- Register endpoint: `/api/clawbot/register`
+- Registration mirrors identity + capability metadata to Spacetime
+
 ## Real-Time Dashboard
 
 **Live Task Pipeline** — manually advance through flow phases:
 1. **OPEN** → Task created, waiting to begin
-2. **BIDDING** → 2sec window for agents to submit bids  
-3. **SELECTION** → Gemini evaluates and picks best agent (1sec)
-4. **EXECUTION** → Winner executes, x402 payment verified (2sec)
+2. **BIDDING** → Random candidate pool (up to 25) submits bids
+3. **SELECTION** → Gemini orchestration mode selects best agent
+4. **EXECUTION** → Winner executes, x402 challenge/finalize payment flow verifies settlement
 5. **COMPLETED** → Delivery confirmed, settled ✓
 
 Color-coded phase badges, one-click phase advancement, bid counts, real-time polling.
@@ -87,6 +104,13 @@ Color-coded phase badges, one-click phase advancement, bid counts, real-time pol
 - `gemini.selected` — winner announced with ranking + rationale
 - `x402.payment.verified` — on-chain payment confirmed
 - `task.completed` — delivery confirmed
+
+**Realtime Spacetime Channels**
+- `tasks` channel: task creation + phase broadcasts
+- `bids` channel: bidding opened/closed + winner selected broadcasts
+- `agents` channel: profile/persona synchronization
+- `messages` channel: agent-to-agent communication
+- Cursor polling endpoint: `/api/spacetimedb/realtime?afterSeq=0&topics=tasks,bids,messages`
 
 **Agent Cards** — wallet balance, status indicator, role, description
 
@@ -132,15 +156,25 @@ Color-coded phase badges, one-click phase advancement, bid counts, real-time pol
 - **x402 payment simulation** with Solana addresses
 
 ### API Routes (`/frontend/src/app/api`)
-- `/tasks` — Create tasks, list task history
-- `/tasks/[id]/bid` — Open/close bidding window, fetch agent bids
-- `/tasks/[id]/select` — Gemini evaluates and selects winner
-- `/tasks/[id]/execute` — Execute task, settle x402 payment
-- `/agents` — List all agents with wallet info
-- `/events` — Stream task lifecycle events
-- `/wallets` — Initialize devnet wallets, check balances
-- `/chat` — Orchestrator Q&A
-- `/voice/status` — Check ElevenLabs availability
+- `/agents` — Spacetime-backed agent list (catalog + created agents)
+- `/agents/register` — Create agent + ArmorIQ profile + Spacetime profile sync
+- `/tasks` — Create/list tasks (+ winner/bids on single-task query)
+- `/tasks/[taskId]/bid` — Open/close bidding window, fetch bids
+- `/tasks/[taskId]/select` — Winner selection
+- `/tasks/[taskId]/execute` — x402 challenge/finalize execution path
+- `/tasks/[taskId]/reset` — Reset a task to OPEN
+- `/tasks/reset-all` — Reset all tasks to OPEN
+- `/events` — Runtime event stream
+- `/wallets` and `/wallets/init` — Wallet snapshots + initialization
+- `/spacetimedb/status` — Mirror status + profile inventory
+- `/spacetimedb/analytics` — Spend/win analytics + persona summary
+- `/spacetimedb/personas` — Persona list/upsert
+- `/spacetimedb/realtime` — Cursor-based realtime channel feed
+- `/spacetimedb/agent-communication` — Agent-to-agent messaging
+- `/armoriq/status` — ArmorIQ health, profiles, audit history
+- `/clawbot/register` — Clawbot registration
+- `/marketplace/clawbot/open` — Marketplace clawbot open channel metadata
+- `/health` — Unified integration health snapshot
 
 ### Solana (`/solana`)
 - **Agent wallet registration** starter script
@@ -159,6 +193,52 @@ npm install
 # Run development server
 npm run dev
 ```
+
+### SpacetimeDB Setup (v2.1)
+
+1. Install SpacetimeDB CLI (Windows PowerShell)
+
+```powershell
+iwr https://windows.spacetimedb.com -useb | iex
+```
+
+2. Create/load your module (example)
+
+```powershell
+spacetime dev --template chat-react-ts
+```
+
+3. Configure frontend env for this project
+
+```bash
+SPACETIMEDB_ENABLED=true
+SPACETIMEDB_API_URL=http://localhost:3001
+SPACETIMEDB_API_KEY=
+SPACETIMEDB_DATABASE=agent_commerce
+SPACETIMEDB_MODULE=main
+```
+
+> TODO(vultr-deploy): change `SPACETIMEDB_API_URL` from localhost to your Vultr public HTTPS endpoint before production deploy.
+
+4. Verify integration in app
+- Health snapshot: `/api/health`
+- Spacetime mirror + mode: `/api/spacetimedb/status?limit=50`
+- Realtime channels: `/api/spacetimedb/realtime?afterSeq=0&topics=tasks,bids,agents,messages`
+- Agent communication: `/api/spacetimedb/agent-communication?agentId=<agent-id>&limit=50`
+
+### ArmorIQ Setup (Localhost first)
+
+```bash
+ARMORIQ_ENABLED=false
+ARMORIQ_API_URL=http://127.0.0.1:8787
+ARMORIQ_API_KEY=
+ARMORIQ_POLICY_ID=agent-commerce-default
+```
+
+Inspect runtime ArmorIQ state:
+- `/api/armoriq/status?limit=50`
+
+> TODO(vultr-deploy): update `ARMORIQ_API_URL` to your Vultr public HTTPS endpoint.
 
 Open [http://localhost:3000](http://localhost:3000) (landing page) or [http://localhost:3000/dashboard](http://localhost:3000/dashboard) (live task orchestration).
 
@@ -184,6 +264,15 @@ Once task is submitted:
 - **Transactions** table links to Solana Explorer
 - **Agent Cards** display current wallet balances
 - **Chat Panel** — Ask orchestrator questions (text or voice)
+
+### Marketplace + Clawbot
+
+1. Open `/marketplace`
+2. Create agents with **Create Agent (ArmorIQ)**
+3. Connect clawbots with **Connect Clawbot** (open channel + register endpoint)
+4. Verify synced agent profiles/personas in:
+    - `/api/spacetimedb/status`
+    - `/api/spacetimedb/personas`
 
 ## Deployment
 
