@@ -35,7 +35,7 @@ async function main() {
   const rpcUrl = process.env.SOLANA_RPC_URL || clusterApiUrl("devnet");
   const connection = new Connection(rpcUrl, "confirmed");
 
-  console.log("Agent Commerce Solana Register Script");
+  console.log("Agentic Commerce Solana Register Script");
   console.log(`RPC: ${rpcUrl}`);
   console.log("----------------------------------------");
 

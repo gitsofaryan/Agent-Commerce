@@ -1,6 +1,6 @@
 # Solana Workspace
 
-This folder contains Solana-specific scripts for Agent Commerce.
+This folder contains Solana-specific scripts for Agentic Commerce.
 
 ## Commands
 
