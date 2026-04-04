@@ -1,19 +1,25 @@
-// Vultr Inference API utility for Agent Commerce
-// Uses API key from environment variable VULTR_INFERENCE_API_KEY
+import { config } from "./config";
 
-const VULTR_API_URL = 'https://api.vultrinference.com';
+const VULTR_API_URL = "https://api.vultrinference.com";
 
-export async function callVultrInference(endpoint, body = {}, method = 'POST') {
-  const apiKey = process.env.VULTR_INFERENCE_API_KEY;
-  if (!apiKey) throw new Error('VULTR_INFERENCE_API_KEY not set');
+export async function callVultrInference(
+  endpoint: string,
+  body: Record<string, any> = {},
+  method: string = "POST",
+) {
+  const apiKey = config.vultrApiKey;
+  if (!apiKey) {
+    console.warn("VULTR_INFERENCE_API_KEY not set, using mock response.");
+    return { text: "Mock Vultr response (API key missing)" };
+  }
 
   const res = await fetch(`${VULTR_API_URL}${endpoint}`, {
     method,
     headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
     },
-    body: method === 'GET' ? undefined : JSON.stringify(body),
+    body: method === "GET" ? undefined : JSON.stringify(body),
   });
 
   if (!res.ok) {

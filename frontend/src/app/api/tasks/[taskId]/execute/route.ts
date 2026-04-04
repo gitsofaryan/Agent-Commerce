@@ -109,9 +109,9 @@ export async function POST(
       );
     }
 
-    if (mode !== "finalize") {
+    if (mode !== "finalize" && mode !== "simulate") {
       return NextResponse.json(
-        { error: "Invalid mode. Use 'challenge' or 'finalize'." },
+        { error: "Invalid mode. Use 'challenge', 'finalize', or 'simulate'." },
         { status: 400 },
       );
     }
@@ -171,6 +171,29 @@ export async function POST(
           { status: 403 },
         );
       }
+    }
+
+    const finalizeSimulated = mode === "simulate";
+
+    if (finalizeSimulated) {
+      const winnerBid = getTaskWinnerBid(taskId);
+      if (!winnerBid) throw new Error("No winner to simulate execution for");
+      
+      const res = await executeTaskWithExternalPayment({
+        taskId,
+        paymentSignature: "DEMO_SIMULATED_SIG",
+        payerWallet: "PLATFORM_DEMO_WALLET"
+      });
+
+      await publishTaskBroadcast({
+        taskId,
+        phase: "COMPLETED",
+        message: "Task execution simulated via Platform Treasury",
+        agentId: res.winner.agentId,
+        details: { winner_agent: res.winner.agentName, amount_sol: res.transaction.amount_sol, mode: "simulated" }
+      });
+
+      return NextResponse.json({ success: true, ...res, message: "Simulation complete" });
     }
 
     const result = await executeTaskWithExternalPayment({

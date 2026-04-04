@@ -750,31 +750,53 @@ export default function DashboardPage() {
     setStatusText("Signing real Solana payment from connected wallet...");
     addToast("x402 executing", "Signing and sending devnet transaction", "info");
 
-    const latestBlockhash = await connection.getLatestBlockhash("confirmed");
-    const tx = new Transaction({
-      feePayer: publicKey,
-      recentBlockhash: latestBlockhash.blockhash,
-    }).add(
-      SystemProgram.transfer({
-        fromPubkey: publicKey,
-        toPubkey: new PublicKey(requirements.recipient),
-        lamports: requirements.amount_lamports,
-      }),
-    );
-
-    const signature = await sendTransaction(tx, connection, {
-      preflightCommitment: "confirmed",
-      skipPreflight: false,
-    });
-
-    await connection.confirmTransaction(
-      {
-        signature,
-        blockhash: latestBlockhash.blockhash,
-        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-      },
-      "confirmed",
-    );
+    let signature = "";
+    try {
+        const latestBlockhash = await connection.getLatestBlockhash("confirmed");
+        const tx = new Transaction({
+          feePayer: publicKey,
+          recentBlockhash: latestBlockhash.blockhash,
+        }).add(
+          SystemProgram.transfer({
+            fromPubkey: publicKey,
+            toPubkey: new PublicKey(requirements.recipient),
+            lamports: requirements.amount_lamports,
+          }),
+        );
+    
+        signature = await sendTransaction(tx, connection, {
+          preflightCommitment: "confirmed",
+          skipPreflight: false,
+        });
+    
+        await connection.confirmTransaction(
+          {
+            signature,
+            blockhash: latestBlockhash.blockhash,
+            lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+          },
+          "confirmed",
+        );
+    } catch (e: any) {
+        if (e.message?.toLowerCase().includes("rejected") || e.name === "WalletSendTransactionError") {
+            console.warn("User rejected wallet signature. Falling back to Demo mode settlement.");
+            setStatusText("Wallet signature rejected. Using Demo Treasury fallback...");
+            addToast("Wallet rejected", "Settling via Demo Payer treasury instead", "info");
+            
+            const demoRes = await fetch(`/api/tasks/${taskId}/execute`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ mode: "simulate" }),
+            });
+            if (!demoRes.ok) throw new Error("Simulation fallback failed");
+            setStatusText("Task completed via Demo Payer treasury.");
+            addToast("Agent paid", "Settled via Demo Treasury", "success");
+            await refreshTasks();
+            await refreshWallets();
+            return; // Exit flow after successful simulation
+        }
+        throw e;
+    }
 
     setStatusText("Finalizing x402 payment verification...");
 
