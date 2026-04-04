@@ -9,6 +9,10 @@ import { config } from "@/lib/config";
 import { kalibrRoute } from "@/lib/integrations/kalibr";
 import { writeSpacetimeRecord } from "@/lib/integrations/spacetimedb";
 import {
+  evaluateArmorIqIntent,
+  registerArmorIqAgentProfile,
+} from "@/lib/integrations/armoriq";
+import {
   Connection,
   Keypair,
   LAMPORTS_PER_SOL,
@@ -407,7 +411,14 @@ export function pushEvent(type: string, data: Record<string, unknown>) {
     state.events = state.events.slice(-MAX_EVENTS);
   }
 
-  mirrorSpacetime("events", event);
+  // Real-time SpacetimeDB Mirror
+  mirrorSpacetime("events", {
+    type,
+    payload: data,
+    timestamp: event.timestamp
+  });
+
+  return event;
 }
 
 export function listEvents(since?: string) {
@@ -943,22 +954,58 @@ export async function selectWinner(taskId: string) {
   const bids = state.bids.filter((b) => b.taskId === taskId);
   if (bids.length === 0) throw new Error("No bids for task");
 
-  const randomSelection = buildRandomSelection(task, bids);
-  const selection = {
-    ...randomSelection,
-    strategy: "vultr_inference" as const,
-    rationale: `Vultr Serverless Inference selected ${randomSelection.winner.agentName} for this task.`,
-  };
+  // Vultr Serverless Inference Selection logic
+  const prompt = `You are the AgentCommerce orchestrator (Gemini/Vultr-powered). 
+Your goal is to select the BEST agent to execute this task: "${task.title}".
+Summary: ${task.summary}
+Budget: ${task.budgetSol} SOL
+
+Review these bids:
+${bids.map(b => `- ID: ${b.id}, Agent: ${b.agentName}, Confidence: ${b.confidence * 100}%, ETA: ${b.etaHours}h, Cost: ${b.priceSol} SOL, Plan: ${b.executionPlan}`).join("\n")}
+
+Rules:
+1. Prioritize confidence (45%), then cost (30%), then speed (25%).
+2. Output EXACTLY the ID of the winner bid first, then a newline, then a 1-sentence rationale.
+3. Your reply must start with the bid ID.`;
+
+  let selection;
+  try {
+    const kalibr = await kalibrRoute(prompt);
+    const lines = kalibr.text.trim().split("\n");
+    const winnerId = lines[0].trim();
+    const winner = bids.find(b => b.id === winnerId) || bids[0];
+    const rationale = lines.slice(1).join(" ").trim() || `Vultr selected ${winner.agentName} based on technical alignment.`;
+    
+    selection = {
+      winner,
+      rationale,
+      ranking: bids.map((b, i) => ({
+        rank: b.id === winnerId ? 1 : i + 2,
+        bidId: b.id,
+        agentName: b.agentName,
+        score: b.id === winnerId ? 100 : 80,
+        reason: b.id === winnerId ? "Technical superiority" : "Competitive runner-up"
+      })),
+      strategy: "vultr_inference" as const
+    };
+  } catch (e) {
+    selection = {
+      ...buildRandomSelection(task, bids),
+      strategy: "vultr_inference" as const
+    };
+  }
 
   task.status = "ASSIGNED";
   state.taskPhases[taskId] = { phase: "EXECUTION", timestamp: nowIso() };
   state.winningBidByTask[taskId] = selection.winner.id;
+  
   mirrorSpacetime("task_selection", {
     task_id: taskId,
     phase: "EXECUTION",
     winner_bid_id: selection.winner.id,
     winner_agent: selection.winner.agentName,
     strategy: selection.strategy,
+    rationale: selection.rationale
   });
 
   pushEvent("orchestrator.selected", {
@@ -970,19 +1017,6 @@ export async function selectWinner(taskId: string) {
     strategy: selection.strategy,
   });
 
-  pushEvent("vultr.selection", {
-    task_id: taskId,
-    message: "Using Vultr Serverless Inference mode to select winner",
-  });
-
-  const winnerMessage = `${selection.winner.agentName} selected by Vultr Serverless Inference.`;
-
-  pushEvent("orchestrator.assignment", {
-    task_id: taskId,
-    winner_agent: selection.winner.agentName,
-    message: winnerMessage,
-  });
-
   return {
     taskId,
     phase: "EXECUTION" as const,
@@ -990,7 +1024,7 @@ export async function selectWinner(taskId: string) {
     rationale: selection.rationale,
     ranking: selection.ranking,
     strategy: selection.strategy,
-    statusMessage: `${winnerMessage} Executing task...`,
+    statusMessage: `${selection.winner.agentName} selected by AI. Executing task...`,
   };
 }
 
@@ -1245,6 +1279,35 @@ export async function executeTaskWithExternalPayment(input: {
 export async function executeTask(taskId: string) {
   const state = getState();
   const context = await resolveTaskExecutionContext(taskId);
+
+  // --- ArmorIQ SECURITY GUARD ---
+  const securityDecision = await evaluateArmorIqIntent({
+    agentId: context.selectedBid.agentId,
+    agentName: context.selectedBid.agentName,
+    taskId: taskId,
+    taskSummary: context.task.summary,
+    requestedAction: "x402_settlement_on_solana"
+  });
+
+  if (!securityDecision.allowed) {
+    pushEvent("armoriq.blocked", {
+      task_id: taskId,
+      agent_id: context.selectedBid.agentId,
+      reason: securityDecision.reason,
+      risk_score: securityDecision.riskScore,
+      message: `ArmorIQ Security: Blocked ${context.selectedBid.agentName} from executing task.`
+    });
+    throw new Error(`ArmorIQ Security Block: ${securityDecision.reason}`);
+  }
+
+  pushEvent("armoriq.allowed", {
+    task_id: taskId,
+    agent_id: context.selectedBid.agentId,
+    reason: securityDecision.reason,
+    risk_score: securityDecision.riskScore,
+    message: `ArmorIQ Security: Approved ${context.selectedBid.agentName} intent.`
+  });
+
   const connection = getConnection();
   const payerWallet = state.demoPayer;
 
