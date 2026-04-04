@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import WalletConnect from "./WalletConnect";
 
 type NavLink = {
@@ -31,11 +32,40 @@ function isActive(pathname: string, href: string) {
 export default function AppNavbar() {
     const pathname = usePathname();
     const showSidebar = pathname !== "/";
+    const headerRef = useRef<HTMLElement | null>(null);
+    const [headerHeight, setHeaderHeight] = useState(88);
+
+    useEffect(() => {
+        const updateHeaderHeight = () => {
+            const nextHeight = headerRef.current?.offsetHeight ?? 88;
+            setHeaderHeight(nextHeight);
+            document.documentElement.style.setProperty("--app-header-h", `${nextHeight}px`);
+        };
+
+        updateHeaderHeight();
+        window.addEventListener("resize", updateHeaderHeight);
+
+        if (typeof ResizeObserver === "undefined") {
+            return () => {
+                window.removeEventListener("resize", updateHeaderHeight);
+            };
+        }
+
+        const observer = new ResizeObserver(updateHeaderHeight);
+        if (headerRef.current) {
+            observer.observe(headerRef.current);
+        }
+
+        return () => {
+            observer.disconnect();
+            window.removeEventListener("resize", updateHeaderHeight);
+        };
+    }, []);
 
     return (
-        <>
-            <header className="border-y-2 border-(--line) bg-(--panel-strong)">
-                <div className="mx-auto w-full max-w-[1280px] px-4 py-3 md:px-6">
+        <div style={{ "--app-header-h": `${headerHeight}px` } as React.CSSProperties}>
+            <header ref={headerRef} className="fixed top-0 left-0 right-0 z-40 border-y-2 border-(--line) bg-(--panel-strong)">
+                <div className="mx-auto w-full max-w-7xl px-4 py-3 md:px-6">
                     <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                         <div className="flex flex-wrap items-center gap-2 md:gap-4">
                             <Link href="/" className="text-2xl font-extrabold tracking-tight md:text-3xl">
@@ -59,29 +89,33 @@ export default function AppNavbar() {
             </header>
 
             {showSidebar ? (
-                <aside
-                    className="fixed bottom-3 left-1/2 z-40 -translate-x-1/2 md:bottom-auto md:left-3 md:top-1/2 md:-translate-x-0 md:-translate-y-1/2"
-                    aria-label="Sidebar Navigation"
+                <section
+                    className="fixed left-0 z-30 w-55 overflow-hidden border-r-2 border-(--line) bg-(--panel)"
+                    style={{ top: headerHeight, bottom: 0 }}
                 >
-                    <div className="neo-card flex flex-row gap-2 bg-(--panel-strong) p-2 md:flex-col md:gap-3 md:p-3">
-                        {primaryLinks.map((link) => {
-                            const active = isActive(pathname, link.href);
-                            return (
-                                <Link
-                                    key={link.href}
-                                    href={link.href}
-                                    className={[
-                                        "flex h-14 w-14 items-center justify-center rounded-full border-2 border-(--line) px-1 text-center text-[9px] font-bold leading-tight md:h-20 md:w-20 md:px-2 md:text-[10px]",
-                                        active ? "bg-black text-white" : "bg-white text-black",
-                                    ].join(" ")}
-                                >
-                                    {link.label.toUpperCase()}
-                                </Link>
-                            );
-                        })}
+                    <div className="h-full w-full px-4 py-3 md:px-3 md:py-4">
+                        <aside aria-label="Sidebar Navigation" className="h-full">
+                            <div className="neo-card flex flex-wrap gap-2 bg-(--panel-strong) p-2 md:h-full md:flex-col md:flex-nowrap md:items-stretch md:gap-3 md:p-3">
+                                {primaryLinks.map((link) => {
+                                    const active = isActive(pathname, link.href);
+                                    return (
+                                        <Link
+                                            key={link.href}
+                                            href={link.href}
+                                            className={[
+                                                "flex min-h-10 min-w-23 items-center justify-center rounded-full border-2 border-(--line) px-3 text-center text-[10px] font-bold leading-tight md:min-h-11 md:w-full md:justify-start md:px-4 md:text-sm",
+                                                active ? "bg-black text-white" : "bg-white text-black",
+                                            ].join(" ")}
+                                        >
+                                            {link.label.toUpperCase()}
+                                        </Link>
+                                    );
+                                })}
+                            </div>
+                        </aside>
                     </div>
-                </aside>
+                </section>
             ) : null}
-        </>
+        </div>
     );
 }

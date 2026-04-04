@@ -14,8 +14,28 @@ import {
   TorusWalletAdapter,
 } from "@solana/wallet-adapter-wallets";
 import { clusterApiUrl } from "@solana/web3.js";
-import { ReactNode, useMemo } from "react";
+import { ReactNode, useCallback, useEffect, useMemo } from "react";
 import "@solana/wallet-adapter-react-ui/styles.css";
+
+const DISCONNECTED_PORT_ERROR = /disconnected port object/i;
+
+function isDisconnectedPortError(errorLike: unknown) {
+  if (typeof errorLike === "string") {
+    return DISCONNECTED_PORT_ERROR.test(errorLike);
+  }
+
+  if (errorLike instanceof Error) {
+    return DISCONNECTED_PORT_ERROR.test(errorLike.message) ||
+      DISCONNECTED_PORT_ERROR.test(errorLike.stack ?? "");
+  }
+
+  if (typeof errorLike === "object" && errorLike && "message" in errorLike) {
+    const maybeMessage = (errorLike as { message?: unknown }).message;
+    return typeof maybeMessage === "string" && DISCONNECTED_PORT_ERROR.test(maybeMessage);
+  }
+
+  return false;
+}
 
 export function SolanaWalletProvider({ children }: { children: ReactNode }) {
   const networkName =
@@ -42,9 +62,48 @@ export function SolanaWalletProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  const onWalletError = useCallback((error: Error) => {
+    if (isDisconnectedPortError(error)) {
+      console.warn("Ignored disconnected wallet extension port error.");
+      return;
+    }
+
+    console.error("Wallet adapter error:", error);
+  }, []);
+
+  useEffect(() => {
+    const onWindowError = (event: ErrorEvent) => {
+      const extensionSource = event.filename?.startsWith("chrome-extension://");
+      if (extensionSource && isDisconnectedPortError(event.message)) {
+        event.preventDefault();
+        console.warn("Suppressed external wallet extension port disconnect error.");
+      }
+    };
+
+    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+      if (isDisconnectedPortError(event.reason)) {
+        event.preventDefault();
+        console.warn("Suppressed wallet extension disconnected port rejection.");
+      }
+    };
+
+    window.addEventListener("error", onWindowError);
+    window.addEventListener("unhandledrejection", onUnhandledRejection);
+
+    return () => {
+      window.removeEventListener("error", onWindowError);
+      window.removeEventListener("unhandledrejection", onUnhandledRejection);
+    };
+  }, []);
+
   return (
     <ConnectionProvider endpoint={endpoint}>
-      <WalletProvider wallets={wallets} autoConnect localStorageKey="agent-commerce-wallet">
+      <WalletProvider
+        wallets={wallets}
+        autoConnect={false}
+        onError={onWalletError}
+        localStorageKey="agent-commerce-wallet"
+      >
         <WalletModalProvider>{children}</WalletModalProvider>
       </WalletProvider>
     </ConnectionProvider>
