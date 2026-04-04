@@ -12,12 +12,8 @@ type NavLink = {
 const primaryLinks: NavLink[] = [
     { href: "/dashboard", label: "Dashboard" },
     { href: "/marketplace", label: "Marketplace" },
-    { href: "/post-task", label: "Post Task" },
+    { href: "/tasks", label: "Tasks" },
     { href: "/connect-clawbot", label: "Connect Agent" },
-];
-
-const secondaryLinks: NavLink[] = [
-    { href: "/tracks", label: "Tracks" },
 ];
 
 function linkClass(active: boolean) {
