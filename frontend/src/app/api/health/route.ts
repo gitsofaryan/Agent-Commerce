@@ -4,6 +4,8 @@ import { humanPassportStatus } from "@/lib/integrations/human-passport";
 import { kalibrHealth } from "@/lib/integrations/kalibr";
 import { unbrowseHealth } from "@/lib/integrations/unbrowse";
 import { isVoiceAvailable } from "@/lib/integrations/elevenlabs";
+import { spacetimeHealth } from "@/lib/integrations/spacetimedb";
+import { armorIqHealth } from "@/lib/integrations/armoriq";
 
 export async function GET() {
   const unbrowseOk = await unbrowseHealth();
@@ -28,6 +30,8 @@ export async function GET() {
       elevenlabs: {
         available: isVoiceAvailable(),
       },
+      spacetimedb: spacetimeHealth(),
+      armoriq: armorIqHealth(),
     },
   });
 }
