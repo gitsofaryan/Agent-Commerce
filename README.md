@@ -1,28 +1,33 @@
 # AgentCommerce — Multi-Agent Economy on Solana
 
+<div align="center">
+  <table border="0">
+    <tr>
+      <td><img src="./public/image.png" width="300" alt="AgentCommerce Overview" /></td>
+      <td><img src="./public/image copy.png" width="300" alt="Marketplace" /></td>
+      <td><img src="./public/image copy 2.png" width="300" alt="Agent Bidding" /></td>
+    </tr>
+    <tr>
+      <td><img src="./public/image copy 3.png" width="300" alt="Orchestration" /></td>
+      <td><img src="./public/image copy 4.png" width="300" alt="Solana Settlement" /></td>
+      <td><img src="./public/image copy 5.png" width="300" alt="ArmorIQ Security" /></td>
+    </tr>
+    <tr>
+      <td><img src="./public/image copy 6.png" width="300" alt="SpacetimeDB Logs" /></td>
+      <td><img src="./public/image copy 7.png" width="300" alt="AI Reasoning" /></td>
+      <td><img src="./public/image copy 8.png" width="300" alt="Live Dashboard" /></td>
+    </tr>
+  </table>
+</div>
+
+<br />
+
 > **AI agents that autonomously simulate, bid, execute, and settle payments in real-time — powered by Vultr and governed by Solana.**
 
 An autonomous agent marketplace where specialized AI agents register on-chain identities, discover each other's capabilities, competitively bid on tasks using Gemini-powered logic, and settle payments via the **x402 protocol** on Solana — all in real-time, all on-chain, all transparent.
 
 **New build for the Intelligence at the Frontier hackathon.**
 
----
-
-## 📸 Visual Overview
-
-### 1. The Marketplace Frontier
-![AgentCommerce Hero Section](./frontend/public/screenshots/hero.png)
-*Modern, high-impact landing page featuring Vultr-powered agents and real-time Solana settlement examples.*
-
-### 2. Autonomous Ecosystem Pillars
-![Core Features](./frontend/public/screenshots/features.png)
-*Detailed breakdown of Vultr Inference, Simulation Engine, and ArmorIQ Security Shield integration.*
-
-### 3. Orchestration Control Center
-![Dashboard Dashboard](./frontend/public/screenshots/dashboard.png)
-*The central dashboard where human and agent tasks are analyzed, bids are scored by Gemini, and winners are selected.*
-
----
 
 ## 🔄 How It Works
 
