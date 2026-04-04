@@ -24,6 +24,7 @@ export interface AgentProfile {
   canPostTasks: boolean;
   clawbotEndpoint: string;
   elevenLabsVoiceId?: string;
+  vultrModel?: string;
 }
 
 export interface TaskBid {
@@ -50,6 +51,7 @@ export const AGENTS: AgentProfile[] = [
     canPostTasks: true,
     clawbotEndpoint: "https://researchagent.example.com/api/clawbot",
     elevenLabsVoiceId: "research-voice",
+    vultrModel: "deepseek-ai/DeepSeek-V3.2",
   },
   {
     id: "executoragent-3",
@@ -61,6 +63,7 @@ export const AGENTS: AgentProfile[] = [
     baseRateSol: 0.03,
     canPostTasks: true,
     clawbotEndpoint: "https://executoragent.example.com/api/clawbot",
+    vultrModel: "MiniMaxAI/MiniMax-M2.5",
   },
   {
     id: "analystagent-12",
@@ -72,6 +75,7 @@ export const AGENTS: AgentProfile[] = [
     baseRateSol: 0.04,
     canPostTasks: true,
     clawbotEndpoint: "https://analystagent.example.com/api/clawbot",
+    vultrModel: "zai-org/GLM-5-FP8",
   },
   {
     id: "auditagent-5",
@@ -83,6 +87,7 @@ export const AGENTS: AgentProfile[] = [
     baseRateSol: 0.06,
     canPostTasks: false,
     clawbotEndpoint: "https://auditagent.example.com/api/clawbot",
+    vultrModel: "zai-org/GLM-5-FP8",
   },
   {
     id: "dataagent-9",
@@ -94,6 +99,7 @@ export const AGENTS: AgentProfile[] = [
     baseRateSol: 0.02,
     canPostTasks: false,
     clawbotEndpoint: "https://dataagent.example.com/api/clawbot",
+    vultrModel: "zai-org/GLM-5-FP8",
   },
   {
     id: "nova-research-21",
@@ -105,6 +111,7 @@ export const AGENTS: AgentProfile[] = [
     baseRateSol: 0.05,
     canPostTasks: true,
     clawbotEndpoint: "https://novaresearch.example.com/api/clawbot",
+    vultrModel: "moonshotai/Kimi-K2.5",
   },
   {
     id: "signal-scout-33",
@@ -116,6 +123,7 @@ export const AGENTS: AgentProfile[] = [
     baseRateSol: 0.04,
     canPostTasks: true,
     clawbotEndpoint: "https://signalscout.example.com/api/clawbot",
+    vultrModel: "MiniMaxAI/MiniMax-M2.5",
   },
   {
     id: "orion-analyst-4",
@@ -127,6 +135,7 @@ export const AGENTS: AgentProfile[] = [
     baseRateSol: 0.05,
     canPostTasks: true,
     clawbotEndpoint: "https://orionanalyst.example.com/api/clawbot",
+    vultrModel: "deepseek-ai/DeepSeek-V3.2",
   },
   {
     id: "quant-ops-17",
@@ -138,6 +147,7 @@ export const AGENTS: AgentProfile[] = [
     baseRateSol: 0.05,
     canPostTasks: true,
     clawbotEndpoint: "https://quantops.example.com/api/clawbot",
+    vultrModel: "MiniMaxAI/MiniMax-M2.5",
   },
   {
     id: "chain-exec-8",
@@ -149,6 +159,7 @@ export const AGENTS: AgentProfile[] = [
     baseRateSol: 0.04,
     canPostTasks: true,
     clawbotEndpoint: "https://chainexecutor.example.com/api/clawbot",
+    vultrModel: "google/gemma-4-31B-it",
   },
   {
     id: "turbo-exec-22",
@@ -160,6 +171,7 @@ export const AGENTS: AgentProfile[] = [
     baseRateSol: 0.04,
     canPostTasks: true,
     clawbotEndpoint: "https://turboexecutor.example.com/api/clawbot",
+    vultrModel: "google/gemma-4-31B-it",
   },
   {
     id: "shield-sec-11",
@@ -171,6 +183,7 @@ export const AGENTS: AgentProfile[] = [
     baseRateSol: 0.06,
     canPostTasks: false,
     clawbotEndpoint: "https://shieldsentinel.example.com/api/clawbot",
+    vultrModel: "moonshotai/Kimi-K2.5",
   },
   {
     id: "sentinel-sec-27",
@@ -182,6 +195,7 @@ export const AGENTS: AgentProfile[] = [
     baseRateSol: 0.06,
     canPostTasks: false,
     clawbotEndpoint: "https://sentinelprime.example.com/api/clawbot",
+    vultrModel: "zai-org/GLM-5-FP8",
   },
   {
     id: "stream-data-6",
@@ -193,6 +207,7 @@ export const AGENTS: AgentProfile[] = [
     baseRateSol: 0.03,
     canPostTasks: false,
     clawbotEndpoint: "https://streamarchitect.example.com/api/clawbot",
+    vultrModel: "MiniMaxAI/MiniMax-M2.5",
   },
   {
     id: "graph-data-18",
@@ -204,6 +219,7 @@ export const AGENTS: AgentProfile[] = [
     baseRateSol: 0.03,
     canPostTasks: false,
     clawbotEndpoint: "https://graphweaver.example.com/api/clawbot",
+    vultrModel: "deepseek-ai/DeepSeek-V3.2",
   },
   {
     id: "arb-exec-41",
@@ -215,6 +231,7 @@ export const AGENTS: AgentProfile[] = [
     baseRateSol: 0.05,
     canPostTasks: true,
     clawbotEndpoint: "https://arbrunner.example.com/api/clawbot",
+    vultrModel: "MiniMaxAI/MiniMax-M2.5",
   },
   {
     id: "risk-analyst-52",
@@ -226,6 +243,7 @@ export const AGENTS: AgentProfile[] = [
     baseRateSol: 0.05,
     canPostTasks: true,
     clawbotEndpoint: "https://riskcartographer.example.com/api/clawbot",
+    vultrModel: "google/gemma-4-31B-it",
   },
   {
     id: "scout-research-64",
@@ -237,6 +255,7 @@ export const AGENTS: AgentProfile[] = [
     baseRateSol: 0.04,
     canPostTasks: true,
     clawbotEndpoint: "https://alphascout.example.com/api/clawbot",
+    vultrModel: "zai-org/GLM-5-FP8",
   },
   {
     id: "vault-sec-73",
@@ -248,6 +267,7 @@ export const AGENTS: AgentProfile[] = [
     baseRateSol: 0.06,
     canPostTasks: false,
     clawbotEndpoint: "https://vaultguardian.example.com/api/clawbot",
+    vultrModel: "google/gemma-4-31B-it",
   },
   {
     id: "beacon-data-88",
@@ -259,6 +279,7 @@ export const AGENTS: AgentProfile[] = [
     baseRateSol: 0.03,
     canPostTasks: false,
     clawbotEndpoint: "https://beacondata.example.com/api/clawbot",
+    vultrModel: "moonshotai/Kimi-K2.5",
   },
 ];
 
@@ -405,7 +426,7 @@ export function getTaskBids(taskId: string) {
   return BIDS.filter((bid) => bid.taskId === taskId);
 }
 
-export function geminiStyleBidSelection(taskId: string) {
+export function vultrOrchestrationBidSelection(taskId: string) {
   const bids = getTaskBids(taskId);
   if (bids.length === 0) return null;
 
@@ -422,7 +443,7 @@ export function geminiStyleBidSelection(taskId: string) {
 
   return {
     winner,
-    rationale: `${winner.agentName} selected by Gemini-style orchestration for best confidence-to-cost balance and fastest safe execution profile.`,
+    rationale: `${winner.agentName} selected by Vultr AI Orchestrator for best confidence-to-cost balance and fastest safe execution profile.`,
     ranking: scored.map((item, i) => ({
       rank: i + 1,
       bidId: item.bid.id,
