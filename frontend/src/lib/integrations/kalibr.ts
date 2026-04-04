@@ -18,14 +18,14 @@ function markHealth(model: string, ok: boolean) {
   modelHealth.set(model, row);
 }
 
-async function callOpenAICompat(
+async function callVultrCompat(
   model: string,
   prompt: string,
 ): Promise<string> {
-  const response = await fetch(`${config.llmBaseUrl}/chat/completions`, {
+  const response = await fetch(`${config.vultrBaseUrl}/chat/completions`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${config.llmApiKey}`,
+      Authorization: `Bearer ${config.vultrApiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -43,7 +43,7 @@ async function callOpenAICompat(
   });
 
   if (!response.ok) {
-    throw new Error(`LLM error: ${response.status}`);
+    throw new Error(`Vultr error: ${response.status}`);
   }
 
   const data = (await response.json()) as {
@@ -53,53 +53,30 @@ async function callOpenAICompat(
   return data.choices?.[0]?.message?.content?.trim() || "";
 }
 
-async function callGemini(model: string, prompt: string): Promise<string> {
-  const response = await fetch(
-    `${config.geminiBaseUrl}/models/${model}:generateContent?key=${config.geminiApiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: prompt }],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.4,
-          maxOutputTokens: 512,
-        },
-      }),
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(`Gemini error: ${response.status}`);
-  }
-
-  const data = (await response.json()) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-  };
-
-  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-}
-
 function deterministicFallback(prompt: string): string {
-  return `Orchestrator route fallback: received \"${prompt.slice(0, 180)}\". I can run research, bidding, selection, and x402 settlement on Solana.`;
+  return `Orchestrator route fallback: received "${prompt.slice(0, 180)}". I can run research, bidding, selection, and x402 settlement on Solana.`;
 }
 
-export async function kalibrRoute(prompt: string): Promise<KalibrResult> {
-  const geminiModels = [config.geminiModelPrimary, config.geminiModelSecondary];
-  const openAiModels = [
-    config.llmModelPrimary,
-    config.llmModelSecondary,
-    config.llmModelTertiary,
-  ];
+export async function kalibrRoute(
+  prompt: string,
+  modelOverride?: string,
+): Promise<KalibrResult> {
+  const models = modelOverride
+    ? [
+        modelOverride,
+        config.vultrModelPrimary,
+        config.vultrModelSecondary,
+        config.vultrModelTertiary,
+      ]
+    : [
+        config.vultrModelPrimary,
+        config.vultrModelSecondary,
+        config.vultrModelTertiary,
+      ];
 
   const startedAt = Date.now();
 
-  if (!config.geminiApiKey && !config.llmApiKey) {
+  if (!config.vultrApiKey) {
     return {
       text: deterministicFallback(prompt),
       provider: "kalibr-mock",
@@ -111,43 +88,21 @@ export async function kalibrRoute(prompt: string): Promise<KalibrResult> {
   }
 
   let attempts = 0;
-  if (config.geminiApiKey) {
-    for (const model of geminiModels) {
-      attempts += 1;
-      try {
-        const text = await callGemini(model, prompt);
-        markHealth(model, true);
-        return {
-          text: text || deterministicFallback(prompt),
-          provider: "kalibr-gemini",
-          model,
-          attempts,
-          failoverUsed: attempts > 1,
-          latencyMs: Date.now() - startedAt,
-        };
-      } catch {
-        markHealth(model, false);
-      }
-    }
-  }
-
-  if (config.llmApiKey) {
-    for (const model of openAiModels) {
-      attempts += 1;
-      try {
-        const text = await callOpenAICompat(model, prompt);
-        markHealth(model, true);
-        return {
-          text: text || deterministicFallback(prompt),
-          provider: "kalibr-openai",
-          model,
-          attempts,
-          failoverUsed: attempts > 1,
-          latencyMs: Date.now() - startedAt,
-        };
-      } catch {
-        markHealth(model, false);
-      }
+  for (const model of models) {
+    attempts += 1;
+    try {
+      const text = await callVultrCompat(model, prompt);
+      markHealth(model, true);
+      return {
+        text: text || deterministicFallback(prompt),
+        provider: "vultr-inference",
+        model,
+        attempts,
+        failoverUsed: attempts > 1,
+        latencyMs: Date.now() - startedAt,
+      };
+    } catch {
+      markHealth(model, false);
     }
   }
 
@@ -164,14 +119,12 @@ export async function kalibrRoute(prompt: string): Promise<KalibrResult> {
 export function kalibrHealth() {
   return {
     enabled: true,
-    geminiConfigured: !!config.geminiApiKey,
-    openAiConfigured: !!config.llmApiKey,
+    vultrConfigured: !!config.vultrApiKey,
     models: {
-      gemini: [config.geminiModelPrimary, config.geminiModelSecondary],
-      openai: [
-        config.llmModelPrimary,
-        config.llmModelSecondary,
-        config.llmModelTertiary,
+      vultr: [
+        config.vultrModelPrimary,
+        config.vultrModelSecondary,
+        config.vultrModelTertiary,
       ],
     },
     stats: Object.fromEntries(modelHealth.entries()),

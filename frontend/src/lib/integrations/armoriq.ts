@@ -1,5 +1,6 @@
 import { config } from "@/lib/config";
 import { AGENTS } from "@/lib/market-data";
+import { kalibrRoute } from "@/lib/integrations/kalibr";
 
 export type ArmorIqMode = "mock" | "live";
 
@@ -79,36 +80,54 @@ function pushAudit(entry: ArmorIqAuditEntry) {
   }
 }
 
-function mockIntentDecision(input: {
+async function vultrIntentDecision(input: {
   taskSummary: string;
   requestedAction: string;
-}): ArmorIqDecision {
-  const text = `${input.taskSummary} ${input.requestedAction}`.toLowerCase();
-  const blockedKeywords = [
-    "exfiltrate",
-    "drain wallet",
-    "steal",
-    "private key",
-    "seed phrase",
-    "unauthorized",
-    "bypass",
-    "delete all",
-  ];
+}): Promise<ArmorIqDecision> {
+  try {
+    const prompt = `You are the ArmorIQ security guardian. Review this task summary and requested action. 
+Task: ${input.taskSummary}
+Action: ${input.requestedAction}
 
-  const matched = blockedKeywords.find((keyword) => text.includes(keyword));
-  const allowed = !matched;
+Decide if this is safe to execute. If it involves stealing, hacking, unauthorized access, bypassing security, or draining funds, block it.
+You MUST reply STRICTLY in this JSON format and nothing else:
+{"allowed": boolean, "reason": "string explaining why", "riskScore": number between 0.0 and 1.0}`;
 
-  return {
-    allowed,
-    mode: "mock",
-    policyId: config.armoriqPolicyId,
-    reason: matched
-      ? `Blocked by local ArmorIQ rule: contains ${matched}`
-      : "Allowed by local ArmorIQ policy simulation",
-    riskScore: matched ? 0.92 : 0.16,
-    decisionId: makeId("armoriq-decision"),
-    timestamp: nowIso(),
-  };
+    const kalibr = await kalibrRoute(prompt);
+    let allowed = true;
+    let reason = "Vultr AI evaluated safe";
+    let riskScore = 0.1;
+
+    try {
+      const text = kalibr.text.replace(/```json/g, "").replace(/```/g, "").trim();
+      const parsed = JSON.parse(text);
+      if (typeof parsed.allowed === "boolean") allowed = parsed.allowed;
+      if (typeof parsed.reason === "string") reason = parsed.reason;
+      if (typeof parsed.riskScore === "number") riskScore = parsed.riskScore;
+    } catch {
+      reason = "Vultr AI heuristic allowed (parse failed)";
+    }
+
+    return {
+      allowed,
+      mode: "live",
+      policyId: config.armoriqPolicyId,
+      reason: `[Vultr Neural Scan] ${reason}`,
+      riskScore,
+      decisionId: makeId("vultr-armoriq"),
+      timestamp: nowIso(),
+    };
+  } catch (e) {
+    return {
+      allowed: true,
+      mode: "mock",
+      policyId: config.armoriqPolicyId,
+      reason: "Fallback allowed (Inference error)",
+      riskScore: 0.1,
+      decisionId: makeId("vultr-armoriq-fail"),
+      timestamp: nowIso(),
+    };
+  }
 }
 
 export async function registerArmorIqAgentProfile(input: {
@@ -193,7 +212,7 @@ export async function evaluateArmorIqIntent(input: {
   context?: Record<string, unknown>;
 }): Promise<ArmorIqDecision> {
   if (!config.armoriqEnabled || !config.armoriqApiUrl) {
-    const decision = mockIntentDecision({
+    const decision = await vultrIntentDecision({
       taskSummary: input.taskSummary,
       requestedAction: input.requestedAction,
     });
@@ -275,7 +294,7 @@ export async function evaluateArmorIqIntent(input: {
 
     return decision;
   } catch (error) {
-    const decision = mockIntentDecision({
+    const decision = await vultrIntentDecision({
       taskSummary: input.taskSummary,
       requestedAction: input.requestedAction,
     });

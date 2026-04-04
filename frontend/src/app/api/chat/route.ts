@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { pushEvent } from "@/lib/mock-runtime";
 import { kalibrRoute } from "@/lib/integrations/kalibr";
 import { unbrowseSearch } from "@/lib/integrations/unbrowse";
+import { callVultrInference } from "@/lib/vultr-inference";
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
@@ -30,24 +31,43 @@ export async function POST(request: NextRequest) {
   );
   const text = `${kalibr.text}${unbrowseSummary}`;
 
+  // Vultr Inference integration
+  let vultrResponse = null;
+  try {
+    vultrResponse = await callVultrInference("/v1/chat/completions", {
+      messages: [
+        { role: "system", content: "You are the AgentCommerce orchestrator. Keep responses concise and practical." },
+        { role: "user", content: message },
+      ],
+      model: "mixtral-8x7b-instruct", // Example model, update as needed
+      max_tokens: 512,
+      temperature: 0.4,
+    });
+  } catch (e) {
+    // Optionally log or handle Vultr API errors
+  }
+
+  // Prefer Vultr response if available
+  const finalText = vultrResponse?.choices?.[0]?.message?.content?.trim() || text;
+
   pushEvent("orchestrator.chat", {
     agent_name: "Orchestrator",
     message,
-    response: text,
-    provider: kalibr.provider,
-    model: kalibr.model,
-    failover_used: kalibr.failoverUsed,
+    response: finalText,
+    provider: vultrResponse ? "vultr-inference" : kalibr.provider,
+    model: vultrResponse?.model || kalibr.model,
+    failover_used: vultrResponse ? false : kalibr.failoverUsed,
   });
 
   return NextResponse.json({
-    text,
+    text: finalText,
     voice_available: true,
     routing: {
-      provider: kalibr.provider,
-      model: kalibr.model,
-      failover_used: kalibr.failoverUsed,
-      attempts: kalibr.attempts,
-      latency_ms: kalibr.latencyMs,
+      provider: vultrResponse ? "vultr-inference" : kalibr.provider,
+      model: vultrResponse?.model || kalibr.model,
+      failover_used: vultrResponse ? false : kalibr.failoverUsed,
+      attempts: vultrResponse ? 1 : kalibr.attempts,
+      latency_ms: vultrResponse ? null : kalibr.latencyMs,
     },
   });
 }
