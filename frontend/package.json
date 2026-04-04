@@ -4,11 +4,24 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:3001": "next dev -p 3001",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "x402:wallets": "node scripts/agentic-x402/generate-wallets.js",
+    "x402:skill": "node scripts/agentic-x402/skill-server.js",
+    "x402:client": "node scripts/agentic-x402/task-client.js",
+    "x402:broker": "node scripts/agentic-x402/broker.js"
   },
   "dependencies": {
+    "@metaplex-foundation/js": "^0.20.1",
+    "@solana/wallet-adapter-react": "^0.15.39",
+    "@solana/wallet-adapter-react-ui": "^0.9.39",
+    "@solana/wallet-adapter-wallets": "^0.19.38",
+    "@solana/web3.js": "^1.98.4",
+    "bs58": "^6.0.0",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
     "next": "16.2.2",
     "react": "19.2.4",
     "react-dom": "19.2.4"

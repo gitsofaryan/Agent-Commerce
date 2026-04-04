@@ -32,3 +32,6 @@ yarn-error.log*
 
 # platform
 .vercel
+
+# local agent wallet secrets for x402 demo scripts
+frontend/scripts/agentic-x402/agents.json
