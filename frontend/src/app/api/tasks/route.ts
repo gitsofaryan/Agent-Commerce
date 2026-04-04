@@ -6,6 +6,7 @@ import {
   getTaskPhase,
   getTaskWinnerBid,
   listBids,
+  getTaskComments,
 } from "@/lib/mock-runtime";
 import {
   getPassportScore,
@@ -33,10 +34,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ task: { ...task, phase }, winner, bids });
   }
 
-  const tasks = listTasks().map((task) => ({
-    ...task,
-    phase: getTaskPhase(task.id) ?? phaseFromStatus(task.status),
-  }));
+  const tasks = listTasks().map((task) => {
+    const liveComments = getTaskComments(task.id);
+    return {
+      ...task,
+      phase: getTaskPhase(task.id) ?? phaseFromStatus(task.status),
+      interestedAgents: liveComments.map(c => ({
+        agentId: c.agentId,
+        agentName: c.agentName,
+        comment: c.comment
+      }))
+    };
+  });
 
   return NextResponse.json({ tasks });
 }
