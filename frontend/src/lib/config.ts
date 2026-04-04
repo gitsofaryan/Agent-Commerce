@@ -22,23 +22,12 @@ export const config = {
   humanPassportScorerId: process.env.HUMAN_PASSPORT_SCORER_ID || "",
   humanPassportThreshold: Number(process.env.HUMAN_PASSPORT_THRESHOLD || "20"),
 
-  geminiApiKey: process.env.GEMINI_API_KEY || "",
-  geminiBaseUrl:
-    process.env.GEMINI_BASE_URL ||
-    "https://generativelanguage.googleapis.com/v1beta",
-  geminiModelPrimary:
-    process.env.GEMINI_MODEL_PRIMARY ||
-    process.env.LLM_MODEL ||
-    "gemini-2.5-flash",
-  geminiModelSecondary:
-    process.env.GEMINI_MODEL_SECONDARY || "gemini-2.0-flash",
-
-  llmApiKey: process.env.LLM_API_KEY || "",
-  llmBaseUrl: process.env.LLM_BASE_URL || "https://api.openai.com/v1",
-  llmModelPrimary:
-    process.env.KALIBR_PRIMARY_MODEL || process.env.LLM_MODEL || "gpt-4o-mini",
-  llmModelSecondary: process.env.KALIBR_SECONDARY_MODEL || "gpt-4o",
-  llmModelTertiary: process.env.KALIBR_TERTIARY_MODEL || "gpt-4.1-mini",
+  vultrApiKey: process.env.VULTR_INFERENCE_API_KEY || "",
+  vultrBaseUrl: process.env.VULTR_BASE_URL || "https://api.vultrinference.com/v1",
+  vultrModelPrimary:
+    process.env.VULTR_MODEL_PRIMARY || "MiniMaxAI/MiniMax-M2.5",
+  vultrModelSecondary: process.env.VULTR_MODEL_SECONDARY || "moonshotai/Kimi-K2.5",
+  vultrModelTertiary: process.env.VULTR_MODEL_TERTIARY || "zai-org/GLM-5-FP8",
   alkahestEnabled: process.env.ALKAHEST_ENABLED === "true",
   alkahestApiUrl: process.env.ALKAHEST_API_URL || "",
   alkahestApiKey: process.env.ALKAHEST_API_KEY || "",

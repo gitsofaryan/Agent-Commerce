@@ -6,6 +6,7 @@ import {
   AgentProfile,
 } from "@/lib/market-data";
 import { config } from "@/lib/config";
+import { kalibrRoute } from "@/lib/integrations/kalibr";
 import { writeSpacetimeRecord } from "@/lib/integrations/spacetimedb";
 import {
   Connection,
@@ -58,6 +59,13 @@ export interface TaskExecutionPaymentRequirements {
   payer_wallet: string | null;
 }
 
+export interface TaskComment {
+  agentId: string;
+  agentName: string;
+  comment: string;
+  timestamp: string;
+}
+
 interface RuntimeState {
   agents: AgentProfile[];
   tasks: MarketplaceTask[];
@@ -71,6 +79,7 @@ interface RuntimeState {
   sharedAiWallet: { keypair: Keypair; lastBalanceSol: number } | null;
   winningBidByTask: Record<string, string>;
   taskPhases: Record<string, { phase: TaskPhase; timestamp: string }>;
+  taskComments: Record<string, TaskComment[]>;
 }
 
 const MAX_EVENTS = 500;
@@ -116,6 +125,73 @@ function randomAgentType(): AgentProfile["type"] {
     "data",
   ];
   return types[Math.floor(Math.random() * types.length)];
+}
+
+const taskSubjects = [
+  "Liquidity routing",
+  "Treasury defense",
+  "Governance monitor",
+  "MEV shield",
+  "Wallet risk scoring",
+  "Oracle reliability",
+  "Cross-chain ops",
+  "Smart contract hardening",
+  "Execution policy",
+  "Data index pipeline",
+  "Analytics cohort",
+];
+
+const taskActions = [
+  "build",
+  "optimize",
+  "audit",
+  "simulate",
+  "monitor",
+  "coordinate",
+  "repair",
+  "automate",
+  "benchmark",
+  "validate",
+];
+
+const taskOutcomes = [
+  "with deterministic fallback rules",
+  "with real-time event replay",
+  "with explicit risk boundaries",
+  "with verifiable execution logs",
+  "with agent-to-agent settlement",
+  "with policy guardrails",
+  "with confidence scoring",
+  "with automatic rollback plan",
+  "with wallet-aware permissions",
+  "with high-throughput routing",
+];
+
+function seedTasks(): MarketplaceTask[] {
+  const seeded = [...TASKS];
+  for (let i = 0; i < 50; i++) {
+    const subject = taskSubjects[i % taskSubjects.length];
+    const action = taskActions[(i * 3) % taskActions.length];
+    const outcome = taskOutcomes[(i * 7) % taskOutcomes.length];
+    const creator = AGENTS[(i * 2 + 1) % AGENTS.length];
+
+    seeded.push({
+      id: `task-gen-${i + 1}`,
+      title: `${subject} ${action}`,
+      category: (["DeFi", "Analytics", "Security", "Data", "Infra"] as const)[i % 5],
+      summary: `Design and deliver ${subject.toLowerCase()} to ${action} ${outcome}.`,
+      budgetSol: Number((0.9 + (i % 9) * 0.35).toFixed(2)),
+      deadlineHours: 6 + (i % 8) * 3,
+      status: "OPEN",
+      requiredSkills: [
+        AGENTS[i % AGENTS.length]?.skills[0] || "analysis",
+        AGENTS[(i + 2) % AGENTS.length]?.skills[1] || "execution",
+      ],
+      createdByType: "agent",
+      createdById: creator.id,
+    });
+  }
+  return seeded;
 }
 
 function createGuestBidder(taskId: string, index: number): BidderCandidate {
@@ -198,7 +274,7 @@ function seedEvents(): RuntimeEvent[] {
 function createInitialState(): RuntimeState {
   return {
     agents: AGENTS.map((agent) => ({ ...agent })),
-    tasks: TASKS.map((task) => ({ ...task, status: "OPEN" as const })),
+    tasks: seedTasks(),
     bids: [],
     events: seedEvents(),
     transactions: [],
@@ -209,6 +285,7 @@ function createInitialState(): RuntimeState {
     sharedAiWallet: null,
     winningBidByTask: {},
     taskPhases: {},
+    taskComments: {},
   };
 }
 
@@ -216,7 +293,7 @@ const globalRuntime = globalThis as unknown as {
   __agentCommerceRuntime?: RuntimeState;
 };
 
-function getState() {
+export function getState(): RuntimeState {
   if (!globalRuntime.__agentCommerceRuntime) {
     globalRuntime.__agentCommerceRuntime = createInitialState();
   }
@@ -241,6 +318,13 @@ function getState() {
   if (!state.taskPhases || typeof state.taskPhases !== "object")
     state.taskPhases = {};
   if (state.demoPayer === undefined) state.demoPayer = null;
+  if (!state.taskComments || typeof state.taskComments !== "object")
+    state.taskComments = {};
+  
+  // If tasks are missing or we just have the minimal default, re-seed the 50 tasks
+  if (!Array.isArray(state.tasks) || state.tasks.length < 10) {
+    state.tasks = seedTasks();
+  }
   if (state.sharedAiWallet === undefined) state.sharedAiWallet = null;
 
   // Keep runtime agent state in sync with the shared platform catalog.
@@ -826,7 +910,7 @@ export function submitBids(taskId: string) {
     taskId,
     phase: "SELECTION",
     totalBids: finalBidCount,
-    statusMessage: "Gemini evaluating bids (fallback random on failure)...",
+    statusMessage: "Vultr Serverless Inference evaluating bids...",
   };
 }
 
@@ -834,7 +918,7 @@ function buildRandomSelection(task: MarketplaceTask, bids: TaskBid[]) {
   const winner = bids[Math.floor(Math.random() * bids.length)];
   return {
     winner,
-    rationale: `Gemini orchestration unavailable for ${task.title}; random fallback selected ${winner.agentName}.`,
+    rationale: `Vultr AI orchestration unavailable for ${task.title}; random fallback selected ${winner.agentName}.`,
     ranking: bids.map((bid, idx) => ({
       rank: idx + 1,
       bidId: bid.id,
@@ -862,8 +946,8 @@ export async function selectWinner(taskId: string) {
   const randomSelection = buildRandomSelection(task, bids);
   const selection = {
     ...randomSelection,
-    strategy: "gemini" as const,
-    rationale: `Gemini orchestration selected ${randomSelection.winner.agentName} for this task.`,
+    strategy: "vultr_inference" as const,
+    rationale: `Vultr Serverless Inference selected ${randomSelection.winner.agentName} for this task.`,
   };
 
   task.status = "ASSIGNED";
@@ -886,12 +970,12 @@ export async function selectWinner(taskId: string) {
     strategy: selection.strategy,
   });
 
-  pushEvent("gemini.selection", {
+  pushEvent("vultr.selection", {
     task_id: taskId,
-    message: "Using Gemini orchestration mode to select winner",
+    message: "Using Vultr Serverless Inference mode to select winner",
   });
 
-  const winnerMessage = `${selection.winner.agentName} selected by Gemini orchestration.`;
+  const winnerMessage = `${selection.winner.agentName} selected by Vultr Serverless Inference.`;
 
   pushEvent("orchestrator.assignment", {
     task_id: taskId,
@@ -1236,4 +1320,89 @@ export function getTaskWinnerBid(taskId: string) {
 
 export function getAgentById(agentId: string) {
   return getState().agents.find((agent) => agent.id === agentId);
+}
+
+export async function orchestratorCommentTask(taskId: string) {
+  const task = getTaskById(taskId);
+  if (!task) throw new Error("Task not found");
+
+  const prompt = `Review this task: ${task.title}. Summary: ${task.summary}. Provide a 1-sentence insight on the complexity or requirements from a platform orchestration perspective.`;
+  
+  const kalibr = await kalibrRoute(prompt);
+
+  pushEvent("orchestrator.comment", {
+    task_id: taskId,
+    title: task.title,
+    message: `${kalibr.text}`,
+    provider: kalibr.provider,
+    model: kalibr.model
+  });
+
+  mirrorSpacetime("orchestrator_comments", {
+    task_id: taskId,
+    comment: kalibr.text,
+    provider: kalibr.provider,
+    model: kalibr.model,
+    timestamp: nowIso()
+  });
+
+  return kalibr.text;
+}
+
+export function addAgentComment(taskId: string, agentId: string, comment: string) {
+  const state = getState();
+  const agent = getAgentById(agentId);
+  if (!agent) return;
+
+  if (!state.taskComments[taskId]) {
+    state.taskComments[taskId] = [];
+  }
+
+  const newComment: TaskComment = {
+    agentId,
+    agentName: agent.name,
+    comment,
+    timestamp: nowIso(),
+  };
+
+  state.taskComments[taskId].push(newComment);
+  
+  // Mirror to SpacetimeDB for immutable persistence
+  mirrorSpacetime("task_comments", {
+    task_id: taskId,
+    agent_id: agentId,
+    agent_name: agent.name,
+    comment: comment,
+    timestamp: newComment.timestamp
+  });
+  
+  pushEvent("agent.comment", {
+    task_id: taskId,
+    agent_id: agentId,
+    agent_name: agent.name,
+    comment,
+    message: `${agent.name} commented on task: ${taskId}`
+  });
+
+  return newComment;
+}
+
+export async function generateAgentComment(taskId: string, agentId: string) {
+  const task = getTaskById(taskId);
+  const agent = getAgentById(agentId);
+  if (!task || !agent) return;
+
+  const prompt = `You are ${agent.name}, an AI agent with skills in ${agent.skills.join(", ")}. 
+Review this task: ${task.title}. Summary: ${task.summary}. 
+Write a very short (1 sentence) professional but charismatic comment expresssing your interest or a technical insight. 
+Your brain is powered by ${agent.vultrModel || "Vultr Serverless Inference"}.`;
+
+  // We use the agent's specific model if available, otherwise fallback
+  const kalibr = await kalibrRoute(prompt, agent.vultrModel);
+  
+  return addAgentComment(taskId, agentId, kalibr.text);
+}
+
+export function getTaskComments(taskId: string) {
+  return getState().taskComments[taskId] || [];
 }
