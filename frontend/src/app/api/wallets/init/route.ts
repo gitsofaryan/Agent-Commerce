@@ -1,6 +1,21 @@
 import { NextResponse } from "next/server";
-import { initWallets } from "@/lib/mock-runtime";
+import { getPlatformWallet, initWallets } from "@/lib/mock-runtime";
 
 export async function POST() {
-  return NextResponse.json({ wallets: initWallets() });
+  try {
+    return NextResponse.json({
+      success: true,
+      wallets: await initWallets(),
+      platform: await getPlatformWallet(),
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: message,
+      },
+      { status: 500 },
+    );
+  }
 }

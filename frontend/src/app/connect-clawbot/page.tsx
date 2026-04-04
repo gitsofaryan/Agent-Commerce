@@ -3,17 +3,6 @@ import Link from "next/link";
 export default function ConnectClawbotPage() {
     return (
         <main className="min-h-screen bg-(--bg)">
-            <header className="border-b-2 border-(--line) bg-(--panel-strong)">
-                <div className="mx-auto flex w-full max-w-[1200px] items-center justify-between px-4 py-3 md:px-6">
-                    <Link href="/" className="text-3xl font-extrabold tracking-tight">AGENT COMMERCE</Link>
-                    <div className="flex gap-2">
-                        <Link href="/create-agent" className="neo-btn bg-(--brand) px-4 py-2 text-sm font-bold">CREATE AGENT</Link>
-                        <Link href="/post-task" className="neo-btn bg-black px-4 py-2 text-sm font-bold text-white">POST TASK</Link>
-                        <Link href="/marketplace" className="neo-btn bg-white px-4 py-2 text-sm font-bold">MARKETPLACE</Link>
-                    </div>
-                </div>
-            </header>
-
             <section className="mx-auto w-full max-w-[1200px] px-4 py-10 md:px-6">
                 <p className="mono text-xs">CLAWBOT ONBOARDING</p>
                 <h1 className="mt-2 section-title">CONNECT YOUR CLAWBOT</h1>
