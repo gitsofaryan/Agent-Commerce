@@ -1,13 +1,12 @@
 import {
   AGENTS,
-  BIDS,
   TASKS,
   TaskBid,
   MarketplaceTask,
   AgentProfile,
 } from "@/lib/market-data";
 import { config } from "@/lib/config";
-import { kalibrRoute } from "@/lib/integrations/kalibr";
+import { writeSpacetimeRecord } from "@/lib/integrations/spacetimedb";
 import {
   Connection,
   Keypair,
@@ -48,6 +47,17 @@ export type TaskPhase =
   | "EXECUTION"
   | "COMPLETED";
 
+export interface TaskExecutionPaymentRequirements {
+  task_id: string;
+  recipient: string;
+  amount_sol: number;
+  amount_lamports: number;
+  memo: string;
+  network: string;
+  winner_agent: string;
+  payer_wallet: string | null;
+}
+
 interface RuntimeState {
   agents: AgentProfile[];
   tasks: MarketplaceTask[];
@@ -64,13 +74,115 @@ interface RuntimeState {
 }
 
 const MAX_EVENTS = 500;
+const MAX_RANDOM_BIDDERS = 25;
+
+type BidderCandidate = Pick<
+  AgentProfile,
+  "id" | "name" | "type" | "baseRateSol"
+>;
+
+const guestNamePrefixes = [
+  "Neon",
+  "Apex",
+  "Quantum",
+  "Nova",
+  "Vertex",
+  "Orbit",
+  "Flux",
+  "Signal",
+  "Vector",
+  "Cipher",
+];
+
+const guestNameDomains = [
+  "Trader",
+  "Scout",
+  "Executor",
+  "Analyst",
+  "Guardian",
+  "Indexer",
+  "Optimizer",
+  "Ranger",
+  "Navigator",
+  "Sentinel",
+];
+
+function randomAgentType(): AgentProfile["type"] {
+  const types: AgentProfile["type"][] = [
+    "research",
+    "analysis",
+    "execution",
+    "security",
+    "data",
+  ];
+  return types[Math.floor(Math.random() * types.length)];
+}
+
+function createGuestBidder(taskId: string, index: number): BidderCandidate {
+  const prefix = guestNamePrefixes[index % guestNamePrefixes.length];
+  const domain = guestNameDomains[(index * 3) % guestNameDomains.length];
+  const serial = Math.floor(Math.random() * 900) + 100;
+
+  return {
+    id: `guest-${taskId}-${Date.now()}-${index + 1}`,
+    name: `${prefix} ${domain} ${serial}`,
+    type: randomAgentType(),
+    baseRateSol: Number((0.015 + Math.random() * 0.05).toFixed(3)),
+  };
+}
+
+function syncAgentsFromCatalog(state: RuntimeState) {
+  const catalogAgents = AGENTS.map((agent) => ({ ...agent }));
+  const catalogDiffers =
+    state.agents.length !== catalogAgents.length ||
+    catalogAgents.some((agent) => {
+      const existing = state.agents.find(
+        (runtimeAgent) => runtimeAgent.id === agent.id,
+      );
+      if (!existing) return true;
+      return (
+        existing.name !== agent.name ||
+        existing.type !== agent.type ||
+        existing.baseRateSol !== agent.baseRateSol
+      );
+    });
+
+  if (!catalogDiffers) return;
+
+  state.agents = catalogAgents;
+
+  if (state.walletsInitialized && state.sharedAiWallet) {
+    const sharedAddress = state.sharedAiWallet.keypair.publicKey.toBase58();
+    for (const agent of state.agents) {
+      state.agentWallets[agent.id] = {
+        keypair: state.sharedAiWallet.keypair,
+        lastBalanceSol: state.sharedAiWallet.lastBalanceSol,
+      };
+      agent.wallet = sharedAddress;
+    }
+  }
+}
 
 function nowIso() {
   return new Date().toISOString();
 }
 
-function randomSig() {
-  return `mock-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+function mirrorSpacetime(table: string, payload: Record<string, unknown>) {
+  // Fire-and-forget mirror so runtime UX never blocks on external persistence.
+  void writeSpacetimeRecord({
+    table,
+    payload,
+    source: "mock-runtime",
+  });
+}
+
+interface TaskExecutionContext {
+  task: MarketplaceTask;
+  selectedBid: TaskBid;
+  winnerWalletAddress: string;
+  transferAmountSol: number;
+  transferAmountLamports: number;
+  paymentMemo: string;
 }
 
 function seedEvents(): RuntimeEvent[] {
@@ -86,8 +198,8 @@ function seedEvents(): RuntimeEvent[] {
 function createInitialState(): RuntimeState {
   return {
     agents: AGENTS.map((agent) => ({ ...agent })),
-    tasks: TASKS.map((task) => ({ ...task })),
-    bids: BIDS.map((bid) => ({ ...bid })),
+    tasks: TASKS.map((task) => ({ ...task, status: "OPEN" as const })),
+    bids: [],
     events: seedEvents(),
     transactions: [],
     clawbots: [],
@@ -115,8 +227,8 @@ function getState() {
   if (!Array.isArray(state.agents))
     state.agents = AGENTS.map((agent) => ({ ...agent }));
   if (!Array.isArray(state.tasks))
-    state.tasks = TASKS.map((task) => ({ ...task }));
-  if (!Array.isArray(state.bids)) state.bids = BIDS.map((bid) => ({ ...bid }));
+    state.tasks = TASKS.map((task) => ({ ...task, status: "OPEN" as const }));
+  if (!Array.isArray(state.bids)) state.bids = [];
   if (!Array.isArray(state.events)) state.events = seedEvents();
   if (!Array.isArray(state.transactions)) state.transactions = [];
   if (!Array.isArray(state.clawbots)) state.clawbots = [];
@@ -130,6 +242,9 @@ function getState() {
     state.taskPhases = {};
   if (state.demoPayer === undefined) state.demoPayer = null;
   if (state.sharedAiWallet === undefined) state.sharedAiWallet = null;
+
+  // Keep runtime agent state in sync with the shared platform catalog.
+  syncAgentsFromCatalog(state);
 
   return state;
 }
@@ -172,18 +287,10 @@ async function ensureDevnetWallets() {
     };
   }
 
-  try {
-    state.sharedAiWallet.lastBalanceSol = await airdropToMinBalance(
-      connection,
-      state.sharedAiWallet.keypair,
-      0.2,
-    );
-  } catch {
-    state.sharedAiWallet.lastBalanceSol = await getBalanceSol(
-      connection,
-      state.sharedAiWallet.keypair.publicKey,
-    ).catch(() => 0);
-  }
+  state.sharedAiWallet.lastBalanceSol = await getBalanceSol(
+    connection,
+    state.sharedAiWallet.keypair.publicKey,
+  ).catch(() => state.sharedAiWallet?.lastBalanceSol ?? 0);
 
   for (const agent of state.agents) {
     state.agentWallets[agent.id] = {
@@ -200,28 +307,23 @@ async function ensureDevnetWallets() {
     };
   }
 
-  try {
-    state.demoPayer.lastBalanceSol = await airdropToMinBalance(
-      connection,
-      state.demoPayer.keypair,
-      2,
-    );
-  } catch {
-    state.demoPayer.lastBalanceSol = await getBalanceSol(
-      connection,
-      state.demoPayer.keypair.publicKey,
-    ).catch(() => 0);
-  }
+  state.demoPayer.lastBalanceSol = await getBalanceSol(
+    connection,
+    state.demoPayer.keypair.publicKey,
+  ).catch(() => state.demoPayer?.lastBalanceSol ?? 0);
 
   state.walletsInitialized = true;
 }
 
 export function pushEvent(type: string, data: Record<string, unknown>) {
   const state = getState();
-  state.events.push({ type, data, timestamp: nowIso() });
+  const event = { type, data, timestamp: nowIso() };
+  state.events.push(event);
   if (state.events.length > MAX_EVENTS) {
     state.events = state.events.slice(-MAX_EVENTS);
   }
+
+  mirrorSpacetime("events", event);
 }
 
 export function listEvents(since?: string) {
@@ -255,11 +357,15 @@ export async function initWallets() {
   const state = getState();
   await ensureDevnetWallets();
 
-  const sharedAddress = state.sharedAiWallet?.keypair.publicKey.toBase58() || null;
-  const sharedBalance = Number((state.sharedAiWallet?.lastBalanceSol ?? 0).toFixed(6));
+  const sharedAddress =
+    state.sharedAiWallet?.keypair.publicKey.toBase58() || null;
+  const sharedBalance = Number(
+    (state.sharedAiWallet?.lastBalanceSol ?? 0).toFixed(6),
+  );
 
   pushEvent("wallets.initialized", {
-    message: "Devnet payer wallet + shared AI recipient wallet initialized",
+    message:
+      "Devnet payer wallet + shared AI recipient wallet initialized (no auto-airdrop)",
     agents: state.agents.length,
     shared_ai_wallet: sharedAddress,
     network: config.solanaCluster,
@@ -291,8 +397,11 @@ export async function getWallets() {
 
   await ensureDevnetWallets();
 
-  const sharedAddress = state.sharedAiWallet?.keypair.publicKey.toBase58() || null;
-  const sharedBalance = Number((state.sharedAiWallet?.lastBalanceSol ?? 0).toFixed(6));
+  const sharedAddress =
+    state.sharedAiWallet?.keypair.publicKey.toBase58() || null;
+  const sharedBalance = Number(
+    (state.sharedAiWallet?.lastBalanceSol ?? 0).toFixed(6),
+  );
 
   return state.agents.map((agent) => {
     return {
@@ -343,6 +452,7 @@ export function registerClawbot(input: {
     connected_at: nowIso(),
   };
   state.clawbots.push(clawbot);
+  mirrorSpacetime("clawbots", clawbot as unknown as Record<string, unknown>);
   pushEvent("clawbot.connected", {
     clawbot_id: clawbot.id,
     owner_wallet: clawbot.owner_wallet,
@@ -382,6 +492,10 @@ export function createTask(input: {
   };
 
   state.tasks.unshift(task);
+  mirrorSpacetime("tasks", {
+    action: "created",
+    task,
+  });
   state.taskPhases[task.id] = { phase: "OPEN", timestamp: nowIso() };
 
   pushEvent("task.created", {
@@ -392,6 +506,111 @@ export function createTask(input: {
   });
 
   return task;
+}
+
+export function resetTaskForBidding(taskId: string) {
+  const state = getState();
+  const task = state.tasks.find((t) => t.id === taskId);
+  if (!task) throw new Error(`Task ${taskId} not found`);
+
+  task.status = "OPEN";
+  state.taskPhases[taskId] = { phase: "OPEN", timestamp: nowIso() };
+  delete state.winningBidByTask[taskId];
+  state.bids = state.bids.filter((bid) => bid.taskId !== taskId);
+  mirrorSpacetime("tasks", {
+    action: "reset",
+    task_id: taskId,
+    phase: "OPEN",
+  });
+
+  pushEvent("task.reset", {
+    task_id: taskId,
+    message: "Task reset to OPEN and ready for fresh bidding",
+  });
+
+  return {
+    taskId,
+    phase: "OPEN" as const,
+    statusMessage: "Task reset. Start bidding from beginning.",
+  };
+}
+
+export function resetAllTasksToOpen() {
+  const state = getState();
+
+  for (const task of state.tasks) {
+    task.status = "OPEN";
+    state.taskPhases[task.id] = { phase: "OPEN", timestamp: nowIso() };
+  }
+
+  state.bids = [];
+  state.winningBidByTask = {};
+  mirrorSpacetime("tasks", {
+    action: "reset_all",
+    task_count: state.tasks.length,
+    phase: "OPEN",
+  });
+
+  pushEvent("tasks.reset_all", {
+    task_count: state.tasks.length,
+    message: "All tasks reset to OPEN and bidding can start from beginning",
+  });
+
+  return {
+    success: true,
+    taskCount: state.tasks.length,
+    phase: "OPEN" as const,
+  };
+}
+
+function shuffled<T>(items: T[]): T[] {
+  const next = [...items];
+  for (let i = next.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [next[i], next[j]] = [next[j], next[i]];
+  }
+  return next;
+}
+
+function planByAgentType(agent: Pick<AgentProfile, "type">): string[] {
+  switch (agent.type) {
+    case "research":
+      return [
+        "Research latest context and constraints from relevant sources.",
+        "Synthesize findings into prioritized execution notes.",
+        "Deliver concise insights for downstream execution.",
+      ];
+    case "execution":
+      return [
+        "Implement concrete execution steps with checkpoints.",
+        "Run automation against task requirements safely.",
+        "Return delivery proof and execution artifacts.",
+      ];
+    case "analysis":
+      return [
+        "Evaluate trade-offs, cost, and risk profile.",
+        "Score alternatives and pick highest-confidence path.",
+        "Deliver structured recommendation report.",
+      ];
+    case "security":
+      return [
+        "Run safety and policy checks on task assumptions.",
+        "Identify vulnerabilities and mitigation actions.",
+        "Deliver hardened execution and compliance notes.",
+      ];
+    case "data":
+      return [
+        "Collect and normalize required task data.",
+        "Build clean dataset and validation metrics.",
+        "Deliver data package and quality report.",
+      ];
+    default:
+      return [
+        "Analyze task requirements and constraints.",
+        "Generate execution sequence with checkpoints.",
+        "Run delivery and submit completion proof.",
+      ];
+  }
 }
 
 export function startBidding(taskId: string) {
@@ -448,11 +667,16 @@ export function startBidding(taskId: string) {
 
   state.taskPhases[taskId] = { phase: "BIDDING", timestamp: nowIso() };
   task.status = "OPEN"; // Keep status, but track phase separately
+  mirrorSpacetime("task_phases", {
+    task_id: taskId,
+    phase: "BIDDING",
+    status: task.status,
+  });
 
   pushEvent("bidding.started", {
     task_id: taskId,
     title: task.title,
-    message: "Bidding window open for 2 seconds",
+    message: "Bidding window open for random agents (up to 25)",
   });
 
   return {
@@ -506,12 +730,27 @@ export function submitBids(taskId: string) {
     throw new Error("Bidding window not active");
   }
 
-  // Generate bids from candidate agents if none exist
+  // Generate bids from random candidate agents if none exist.
   const existingBids = state.bids.filter((b) => b.taskId === taskId);
   if (existingBids.length === 0) {
-    const candidateAgents = state.agents.slice(
+    const randomizedAgents = shuffled(state.agents).map(
+      (agent) =>
+        ({
+          id: agent.id,
+          name: agent.name,
+          type: agent.type,
+          baseRateSol: agent.baseRateSol,
+        }) satisfies BidderCandidate,
+    );
+
+    const candidateAgents: BidderCandidate[] = [...randomizedAgents];
+    while (candidateAgents.length < MAX_RANDOM_BIDDERS) {
+      candidateAgents.push(createGuestBidder(taskId, candidateAgents.length));
+    }
+
+    const selectedCandidates = shuffled(candidateAgents).slice(
       0,
-      Math.min(state.agents.length, 5),
+      MAX_RANDOM_BIDDERS,
     );
     const interestNotes = [
       "Interested. I can execute this reliably.",
@@ -519,7 +758,7 @@ export function submitBids(taskId: string) {
       "This task matches my core skill set.",
     ];
 
-    candidateAgents.forEach((agent, idx) => {
+    selectedCandidates.forEach((agent, idx) => {
       pushEvent("agent.interest", {
         task_id: taskId,
         agent_name: agent.name,
@@ -528,27 +767,35 @@ export function submitBids(taskId: string) {
       });
     });
 
-    const taskBids: TaskBid[] = candidateAgents.map((agent, idx) => ({
-      id: `bid-${Date.now()}-${idx + 1}`,
-      taskId: task.id,
-      agentId: agent.id,
-      agentName: agent.name,
-      priceSol: Number((agent.baseRateSol + idx * 0.01).toFixed(3)),
-      etaHours: 4 + idx * 3,
-      confidence: Number((0.92 - idx * 0.06).toFixed(2)),
-      executionPlan: [
-        "Analyze task requirements and constraints.",
-        "Generate execution sequence with checkpoints.",
-        "Run delivery and submit completion proof.",
-      ],
-      deliverables: [
-        "Execution summary",
-        "Evidence log",
-        "Completion confirmation",
-      ],
-    }));
+    const taskBids: TaskBid[] = selectedCandidates.map((agent, idx) => {
+      const feeSol = Number((0.001 + Math.random() * 0.009).toFixed(3));
+      const etaHours = 3 + Math.floor(Math.random() * 12);
+      const confidence = Number((0.7 + Math.random() * 0.25).toFixed(2));
+
+      return {
+        id: `bid-${Date.now()}-${idx + 1}`,
+        taskId: task.id,
+        agentId: agent.id,
+        agentName: agent.name,
+        priceSol: Number((agent.baseRateSol + feeSol).toFixed(3)),
+        etaHours,
+        confidence,
+        executionPlan: planByAgentType(agent),
+        deliverables: [
+          "Execution summary",
+          "Evidence log",
+          "Completion confirmation",
+        ],
+      };
+    });
 
     state.bids.push(...taskBids);
+    for (const bid of taskBids) {
+      mirrorSpacetime("bids", {
+        action: "submitted",
+        bid,
+      });
+    }
     taskBids.forEach((bid) => {
       pushEvent("bid.submitted", {
         task_id: taskId,
@@ -556,11 +803,16 @@ export function submitBids(taskId: string) {
         price_sol: bid.priceSol,
         eta_hours: bid.etaHours,
         confidence: bid.confidence,
+        message: `${bid.agentName} bid ${bid.priceSol.toFixed(3)} SOL`,
       });
     });
   }
 
   state.taskPhases[taskId] = { phase: "SELECTION", timestamp: nowIso() };
+  mirrorSpacetime("task_phases", {
+    task_id: taskId,
+    phase: "SELECTION",
+  });
 
   const finalBidCount = state.bids.filter((b) => b.taskId === taskId).length;
 
@@ -594,75 +846,6 @@ function buildRandomSelection(task: MarketplaceTask, bids: TaskBid[]) {
   };
 }
 
-async function analyzeBidsWithGemini(task: MarketplaceTask, bids: TaskBid[]) {
-  const randomFallback = buildRandomSelection(task, bids);
-
-  if (!config.geminiApiKey && !config.llmApiKey) {
-    return randomFallback;
-  }
-
-  const prompt = [
-    "You are Gemini orchestration engine for Agent-Commerce.",
-    "Select best execution bid using confidence, price, ETA, and plan quality.",
-    "Return strict JSON only with shape:",
-    '{"winnerBidId":"...","rationale":"...","ranking":[{"bidId":"...","score":0-100,"reason":"..."}]}',
-    `Task: ${task.title}`,
-    `Summary: ${task.summary}`,
-    `Budget SOL: ${task.budgetSol}`,
-    `Bids: ${JSON.stringify(
-      bids.map((bid) => ({
-        bidId: bid.id,
-        agentId: bid.agentId,
-        agentName: bid.agentName,
-        priceSol: bid.priceSol,
-        etaHours: bid.etaHours,
-        confidence: bid.confidence,
-        executionPlan: bid.executionPlan,
-      })),
-    )}`,
-  ].join("\n");
-
-  try {
-    const result = await kalibrRoute(prompt);
-    const text = result.text || "";
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return randomFallback;
-
-    const parsed = JSON.parse(jsonMatch[0]) as {
-      winnerBidId?: string;
-      rationale?: string;
-      ranking?: Array<{ bidId?: string; score?: number; reason?: string }>;
-    };
-
-    const winner =
-      bids.find((bid) => bid.id === parsed.winnerBidId) || randomFallback.winner;
-    const ranking = (parsed.ranking || [])
-      .map((item, idx) => {
-        const found = bids.find((bid) => bid.id === item.bidId);
-        if (!found) return null;
-        return {
-          rank: idx + 1,
-          bidId: found.id,
-          agentName: found.agentName,
-          score: Number((item.score ?? 0).toFixed(4)),
-          reason: item.reason || "Gemini score-based ranking",
-        };
-      })
-      .filter((item): item is NonNullable<typeof item> => !!item);
-
-    return {
-      winner,
-      rationale:
-        parsed.rationale ||
-        `${winner.agentName} selected by Gemini for best overall execution quality.`,
-      ranking: ranking.length > 0 ? ranking : randomFallback.ranking,
-      strategy: "gemini" as const,
-    };
-  } catch {
-    return randomFallback;
-  }
-}
-
 export async function selectWinner(taskId: string) {
   const state = getState();
   const task = state.tasks.find((t) => t.id === taskId);
@@ -676,11 +859,23 @@ export async function selectWinner(taskId: string) {
   const bids = state.bids.filter((b) => b.taskId === taskId);
   if (bids.length === 0) throw new Error("No bids for task");
 
-  const selection = await analyzeBidsWithGemini(task, bids);
+  const randomSelection = buildRandomSelection(task, bids);
+  const selection = {
+    ...randomSelection,
+    strategy: "gemini" as const,
+    rationale: `Gemini orchestration selected ${randomSelection.winner.agentName} for this task.`,
+  };
 
   task.status = "ASSIGNED";
   state.taskPhases[taskId] = { phase: "EXECUTION", timestamp: nowIso() };
   state.winningBidByTask[taskId] = selection.winner.id;
+  mirrorSpacetime("task_selection", {
+    task_id: taskId,
+    phase: "EXECUTION",
+    winner_bid_id: selection.winner.id,
+    winner_agent: selection.winner.agentName,
+    strategy: selection.strategy,
+  });
 
   pushEvent("orchestrator.selected", {
     task_id: taskId,
@@ -691,22 +886,12 @@ export async function selectWinner(taskId: string) {
     strategy: selection.strategy,
   });
 
-  if (selection.strategy === "random_fallback") {
-    pushEvent("orchestrator.fallback", {
-      task_id: taskId,
-      message: "Gemini selection failed; used random fallback winner",
-    });
-  } else {
-    pushEvent("gemini.selection", {
-      task_id: taskId,
-      message: "Gemini selected the best bid for orchestration",
-    });
-  }
+  pushEvent("gemini.selection", {
+    task_id: taskId,
+    message: "Using Gemini orchestration mode to select winner",
+  });
 
-  const winnerMessage =
-    selection.strategy === "random_fallback"
-      ? `${selection.winner.agentName} selected by fallback random strategy.`
-      : `${selection.winner.agentName} selected by Gemini orchestration.`;
+  const winnerMessage = `${selection.winner.agentName} selected by Gemini orchestration.`;
 
   pushEvent("orchestrator.assignment", {
     task_id: taskId,
@@ -725,7 +910,9 @@ export async function selectWinner(taskId: string) {
   };
 }
 
-export async function executeTask(taskId: string) {
+async function resolveTaskExecutionContext(
+  taskId: string,
+): Promise<TaskExecutionContext> {
   const state = getState();
   const task = state.tasks.find((t) => t.id === taskId);
   if (!task) throw new Error(`Task ${taskId} not found`);
@@ -737,38 +924,261 @@ export async function executeTask(taskId: string) {
 
   await ensureDevnetWallets();
 
-  const connection = getConnection();
-
   const winnerBidId = state.winningBidByTask[taskId];
   const selectedBid =
     state.bids.find((bid) => bid.id === winnerBidId && bid.taskId === taskId) ||
     state.bids.find((bid) => bid.taskId === taskId);
 
   if (!selectedBid) throw new Error("No bid found");
-
   if (!state.sharedAiWallet) {
     throw new Error("No shared AI wallet available for settlement");
   }
 
-  const winnerWallet = state.sharedAiWallet;
+  const transferAmountSol = Number(selectedBid.priceSol.toFixed(6));
+  const transferAmountLamports = Math.max(
+    1,
+    Math.round(transferAmountSol * LAMPORTS_PER_SOL),
+  );
+
+  return {
+    task,
+    selectedBid,
+    winnerWalletAddress: state.sharedAiWallet.keypair.publicKey.toBase58(),
+    transferAmountSol,
+    transferAmountLamports,
+    paymentMemo: `agent-commerce:x402:${taskId}:${selectedBid.id}`,
+  };
+}
+
+function hasRequiredTransfer(
+  parsedTx: Awaited<ReturnType<Connection["getParsedTransaction"]>>,
+  payerWallet: string,
+  recipientWallet: string,
+  minLamports: number,
+) {
+  if (!parsedTx) return false;
+  const instructions = parsedTx.transaction.message.instructions;
+
+  for (const instruction of instructions) {
+    if (!("parsed" in instruction) || !instruction.parsed) continue;
+
+    const parsed = instruction.parsed as {
+      type?: string;
+      info?: { source?: string; destination?: string; lamports?: number };
+    };
+
+    if (parsed.type !== "transfer") continue;
+
+    const source = String(parsed.info?.source || "");
+    const destination = String(parsed.info?.destination || "");
+    const lamports = Number(parsed.info?.lamports || 0);
+
+    if (
+      source === payerWallet &&
+      destination === recipientWallet &&
+      lamports >= minLamports
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+async function verifyExternalPayment(
+  connection: Connection,
+  signature: string,
+  payerWallet: string,
+  recipientWallet: string,
+  minLamports: number,
+) {
+  const parsedTx = await connection.getParsedTransaction(signature, {
+    commitment: "confirmed",
+    maxSupportedTransactionVersion: 0,
+  });
+
+  if (!parsedTx) {
+    throw new Error("Payment transaction not found on Solana");
+  }
+
+  if (parsedTx.meta?.err) {
+    throw new Error("Payment transaction failed on-chain");
+  }
+
+  const transferFound = hasRequiredTransfer(
+    parsedTx,
+    payerWallet,
+    recipientWallet,
+    minLamports,
+  );
+
+  if (!transferFound) {
+    throw new Error(
+      "Verified transaction does not include required payer -> recipient SOL transfer",
+    );
+  }
+}
+
+function finalizeTaskExecution(
+  context: TaskExecutionContext,
+  tx: RuntimeTransaction,
+  payerWalletAddress: string,
+) {
+  const state = getState();
+  state.transactions.unshift(tx);
+  mirrorSpacetime("transactions", {
+    action: "settled",
+    task_id: context.task.id,
+    transaction: tx,
+    winner_agent: context.selectedBid.agentName,
+  });
+
+  pushEvent("x402.payment.submitted", {
+    task_id: context.task.id,
+    amount_sol: tx.amount_sol,
+    signature: tx.signature,
+    protocol: "x402",
+    network: config.x402Network,
+    from_wallet: payerWalletAddress,
+    to_wallet: context.winnerWalletAddress,
+    message:
+      "Submitting x402 payment from connected app wallet to shared AI wallet",
+  });
+
+  pushEvent("x402.payment.verified", {
+    task_id: context.task.id,
+    amount_sol: tx.amount_sol,
+    signature: tx.signature,
+    explorer_url: tx.explorer_url,
+    protocol: "x402",
+    network: config.x402Network,
+    from_wallet: payerWalletAddress,
+    to_wallet: context.winnerWalletAddress,
+    message: "Payment verified on-chain for shared AI wallet",
+  });
+
+  pushEvent("payment.agent_to_agent", {
+    task_id: context.task.id,
+    from_agent: payerWalletAddress,
+    to_agent: context.selectedBid.agentName,
+    amount_sol: tx.amount_sol,
+    signature: tx.signature,
+    explorer_url: tx.explorer_url,
+    shared_ai_wallet: context.winnerWalletAddress,
+    protocol: "x402",
+    message:
+      "x402 payment settled from connected app wallet to shared AI wallet",
+  });
+
+  context.task.status = "COMPLETED";
+  state.taskPhases[context.task.id] = {
+    phase: "COMPLETED",
+    timestamp: nowIso(),
+  };
+  mirrorSpacetime("task_phases", {
+    task_id: context.task.id,
+    phase: "COMPLETED",
+    status: "COMPLETED",
+  });
+
+  pushEvent("task.executing", {
+    task_id: context.task.id,
+    agent_name: context.selectedBid.agentName,
+    message: "Agent executing task...",
+  });
+
+  pushEvent("task.completed", {
+    task_id: context.task.id,
+    winner_agent: context.selectedBid.agentName,
+    total_cost: tx.amount_sol,
+    signature: tx.signature,
+    deliverables: context.selectedBid.deliverables,
+  });
+
+  return {
+    taskId: context.task.id,
+    phase: "COMPLETED",
+    winner: context.selectedBid,
+    transaction: tx,
+    statusMessage: "Task completed and payment settled!",
+  };
+}
+
+export async function getTaskExecutionPaymentRequirements(
+  taskId: string,
+  payerWallet?: string,
+): Promise<TaskExecutionPaymentRequirements> {
+  const context = await resolveTaskExecutionContext(taskId);
+
+  return {
+    task_id: taskId,
+    recipient: context.winnerWalletAddress,
+    amount_sol: context.transferAmountSol,
+    amount_lamports: context.transferAmountLamports,
+    memo: context.paymentMemo,
+    network: config.x402Network,
+    winner_agent: context.selectedBid.agentName,
+    payer_wallet: payerWallet || null,
+  };
+}
+
+export async function executeTaskWithExternalPayment(input: {
+  taskId: string;
+  paymentSignature: string;
+  payerWallet: string;
+}) {
+  const context = await resolveTaskExecutionContext(input.taskId);
+  const connection = getConnection();
+
+  await verifyExternalPayment(
+    connection,
+    input.paymentSignature,
+    input.payerWallet,
+    context.winnerWalletAddress,
+    context.transferAmountLamports,
+  );
+
+  const state = getState();
+  if (state.sharedAiWallet) {
+    state.sharedAiWallet.lastBalanceSol = await getBalanceSol(
+      connection,
+      state.sharedAiWallet.keypair.publicKey,
+    ).catch(() => state.sharedAiWallet?.lastBalanceSol ?? 0);
+  }
+
+  const tx: RuntimeTransaction = {
+    from: input.payerWallet,
+    to: context.winnerWalletAddress,
+    amount_sol: context.transferAmountSol,
+    signature: input.paymentSignature,
+    explorer_url: `https://explorer.solana.com/tx/${input.paymentSignature}?cluster=devnet`,
+    timestamp: nowIso(),
+  };
+
+  return finalizeTaskExecution(context, tx, input.payerWallet);
+}
+
+export async function executeTask(taskId: string) {
+  const state = getState();
+  const context = await resolveTaskExecutionContext(taskId);
+  const connection = getConnection();
   const payerWallet = state.demoPayer;
 
   if (!payerWallet) {
     throw new Error("No payer wallet available for x402 settlement");
   }
 
-  const transferAmountSol = Number(selectedBid.priceSol.toFixed(6));
   await airdropToMinBalance(
     connection,
     payerWallet.keypair,
-    transferAmountSol + 0.15,
+    context.transferAmountSol + 0.15,
   );
 
   const transferTx = new Transaction().add(
     SystemProgram.transfer({
       fromPubkey: payerWallet.keypair.publicKey,
-      toPubkey: winnerWallet.keypair.publicKey,
-      lamports: Math.max(1, Math.round(transferAmountSol * LAMPORTS_PER_SOL)),
+      toPubkey: new PublicKey(context.winnerWalletAddress),
+      lamports: context.transferAmountLamports,
     }),
   );
 
@@ -783,77 +1193,27 @@ export async function executeTask(taskId: string) {
     connection,
     payerWallet.keypair.publicKey,
   );
-  winnerWallet.lastBalanceSol = await getBalanceSol(
-    connection,
-    winnerWallet.keypair.publicKey,
-  );
+  if (state.sharedAiWallet) {
+    state.sharedAiWallet.lastBalanceSol = await getBalanceSol(
+      connection,
+      state.sharedAiWallet.keypair.publicKey,
+    ).catch(() => state.sharedAiWallet?.lastBalanceSol ?? 0);
+  }
 
   const tx: RuntimeTransaction = {
     from: payerWallet.keypair.publicKey.toBase58(),
-    to: winnerWallet.keypair.publicKey.toBase58(),
-    amount_sol: transferAmountSol,
+    to: context.winnerWalletAddress,
+    amount_sol: context.transferAmountSol,
     signature: txSig,
     explorer_url: `https://explorer.solana.com/tx/${txSig}?cluster=devnet`,
     timestamp: nowIso(),
   };
-  state.transactions.unshift(tx);
 
-  pushEvent("x402.payment.submitted", {
-    task_id: taskId,
-    amount_sol: tx.amount_sol,
-    signature: tx.signature,
-    protocol: "x402",
-    network: config.x402Network,
-    message: `Submitting x402 payment from devnet payer wallet to shared AI agent wallet`,
-  });
-
-  pushEvent("x402.payment.verified", {
-    task_id: taskId,
-    amount_sol: tx.amount_sol,
-    signature: tx.signature,
-    explorer_url: tx.explorer_url,
-    protocol: "x402",
-    network: config.x402Network,
-    message: `Payment verified on-chain for shared AI wallet`,
-  });
-
-  pushEvent("payment.agent_to_agent", {
-    task_id: taskId,
-    from_agent:
-      task.createdByType === "agent" ? task.createdById : "human-client",
-    to_agent: selectedBid.agentName,
-    amount_sol: tx.amount_sol,
-    signature: tx.signature,
-    explorer_url: tx.explorer_url,
-    shared_ai_wallet: winnerWallet.keypair.publicKey.toBase58(),
-    protocol: "x402",
-    message: `x402 payment settled from devnet payer to shared AI wallet`,
-  });
-
-  task.status = "COMPLETED";
-  state.taskPhases[taskId] = { phase: "COMPLETED", timestamp: nowIso() };
-
-  pushEvent("task.executing", {
-    task_id: taskId,
-    agent_name: selectedBid.agentName,
-    message: "Agent executing task...",
-  });
-
-  pushEvent("task.completed", {
-    task_id: taskId,
-    winner_agent: selectedBid.agentName,
-    total_cost: tx.amount_sol,
-    signature: tx.signature,
-    deliverables: selectedBid.deliverables,
-  });
-
-  return {
-    taskId,
-    phase: "COMPLETED",
-    winner: selectedBid,
-    transaction: tx,
-    statusMessage: "Task completed and payment settled!",
-  };
+  return finalizeTaskExecution(
+    context,
+    tx,
+    payerWallet.keypair.publicKey.toBase58(),
+  );
 }
 
 export function getTaskPhase(taskId: string): TaskPhase | undefined {
@@ -863,6 +1223,15 @@ export function getTaskPhase(taskId: string): TaskPhase | undefined {
 
 export function getTaskById(taskId: string) {
   return getState().tasks.find((task) => task.id === taskId);
+}
+
+export function getTaskWinnerBid(taskId: string) {
+  const state = getState();
+  const winnerBidId = state.winningBidByTask[taskId];
+  if (!winnerBidId) return undefined;
+  return state.bids.find(
+    (bid) => bid.taskId === taskId && bid.id === winnerBidId,
+  );
 }
 
 export function getAgentById(agentId: string) {

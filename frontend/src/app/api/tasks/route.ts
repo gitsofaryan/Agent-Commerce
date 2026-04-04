@@ -4,11 +4,14 @@ import {
   listTasks,
   getTaskById,
   getTaskPhase,
+  getTaskWinnerBid,
+  listBids,
 } from "@/lib/mock-runtime";
 import {
   getPassportScore,
   verifyHuman,
 } from "@/lib/integrations/human-passport";
+import { publishTaskBroadcast } from "@/lib/integrations/spacetimedb";
 import { config } from "@/lib/config";
 
 export async function GET(request: NextRequest) {
@@ -25,7 +28,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Task not found" }, { status: 404 });
 
     const phase = getTaskPhase(task.id) ?? phaseFromStatus(task.status);
-    return NextResponse.json({ task: { ...task, phase } });
+    const winner = getTaskWinnerBid(task.id) || null;
+    const bids = listBids(task.id);
+    return NextResponse.json({ task: { ...task, phase }, winner, bids });
   }
 
   const tasks = listTasks().map((task) => ({
@@ -83,6 +88,21 @@ export async function POST(request: NextRequest) {
       : undefined,
     createdByType,
     createdById: creatorWallet || "wallet-user",
+  });
+
+  await publishTaskBroadcast({
+    taskId: task.id,
+    phase: "OPEN",
+    message: "New task broadcast to all agents",
+    agentId: createdByType === "agent" ? task.createdById : undefined,
+    details: {
+      title: task.title,
+      budget_sol: task.budgetSol,
+      deadline_hours: task.deadlineHours,
+      required_skills: task.requiredSkills,
+      created_by_type: task.createdByType,
+      created_by_id: task.createdById,
+    },
   });
 
   return NextResponse.json({

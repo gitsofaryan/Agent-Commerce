@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { selectWinner, getTaskById } from "@/lib/mock-runtime";
+import {
+  publishBidBroadcast,
+  publishTaskBroadcast,
+} from "@/lib/integrations/spacetimedb";
 
 export async function POST(
   request: NextRequest,
@@ -14,6 +18,28 @@ export async function POST(
     }
 
     const result = await selectWinner(taskId);
+
+    await publishTaskBroadcast({
+      taskId,
+      phase: "EXECUTION",
+      message: `${result.winner.agentName} selected for execution`,
+      agentId: result.winner.agentId,
+      details: {
+        winner_bid_id: result.winner.id,
+        strategy: result.strategy,
+      },
+    });
+
+    await publishBidBroadcast({
+      taskId,
+      stage: "winner_selected",
+      bidCount: result.ranking?.length || undefined,
+      winnerAgent: result.winner.agentName,
+      details: {
+        winner_bid_id: result.winner.id,
+        strategy: result.strategy,
+      },
+    });
 
     return NextResponse.json({
       success: true,

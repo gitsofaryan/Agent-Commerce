@@ -5,6 +5,10 @@ import {
   getTaskById,
   listBids,
 } from "@/lib/mock-runtime";
+import {
+  publishBidBroadcast,
+  publishTaskBroadcast,
+} from "@/lib/integrations/spacetimedb";
 
 export async function POST(
   request: NextRequest,
@@ -22,6 +26,25 @@ export async function POST(
 
     if (action === "start") {
       const result = startBidding(taskId);
+
+      await publishTaskBroadcast({
+        taskId,
+        phase: "BIDDING",
+        message: "Bidding opened for this task",
+        details: {
+          status_message: result.statusMessage,
+          task_title: task.title,
+        },
+      });
+
+      await publishBidBroadcast({
+        taskId,
+        stage: "bidding_open",
+        details: {
+          status_message: result.statusMessage,
+        },
+      });
+
       return NextResponse.json({
         success: true,
         ...result,
@@ -30,6 +53,26 @@ export async function POST(
     } else if (action === "close") {
       const result = submitBids(taskId);
       const bids = listBids(taskId);
+
+      await publishTaskBroadcast({
+        taskId,
+        phase: "SELECTION",
+        message: "Bidding closed and selection started",
+        details: {
+          bid_count: bids.length,
+          status_message: result.statusMessage,
+        },
+      });
+
+      await publishBidBroadcast({
+        taskId,
+        stage: "bids_submitted",
+        bidCount: bids.length,
+        details: {
+          status_message: result.statusMessage,
+        },
+      });
+
       return NextResponse.json({
         success: true,
         ...result,
