@@ -3,20 +3,17 @@ import { selectWinner, getTaskById } from "@/lib/mock-runtime";
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ taskId: string }> }
+  { params }: { params: Promise<{ taskId: string }> },
 ) {
   const { taskId } = await params;
 
   try {
     const task = getTaskById(taskId);
     if (!task) {
-      return NextResponse.json(
-        { error: "Task not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Task not found" }, { status: 404 });
     }
 
-    const result = selectWinner(taskId);
+    const result = await selectWinner(taskId);
 
     return NextResponse.json({
       success: true,
@@ -24,9 +21,6 @@ export async function POST(
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json(
-      { error: message },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }

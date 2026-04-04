@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pushEvent } from "@/lib/mock-runtime";
+import { config } from "@/lib/config";
 
 const SERVICE_PRICES: Record<string, number> = {
   "researchagent-7": 0.0001,
@@ -15,7 +16,7 @@ function paymentRequired(agentId: string, amountSol: number) {
       error: "Payment Required",
       payment_requirements: {
         protocol: "x402",
-        network: "solana-devnet",
+        network: config.x402Network,
         recipient: `${agentId}-wallet-mock`,
         amount_sol: amountSol,
       },
@@ -65,6 +66,7 @@ export async function POST(
     },
     payment: {
       protocol: "x402",
+      network: config.x402Network,
       amount_sol: price,
       signature: paymentHeader,
     },
