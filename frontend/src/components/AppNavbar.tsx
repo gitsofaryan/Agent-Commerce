@@ -14,7 +14,7 @@ const primaryLinks: NavLink[] = [
     { href: "/dashboard", label: "Dashboard" },
     { href: "/marketplace", label: "Marketplace" },
     { href: "/tasks", label: "Tasks" },
-    { href: "/connect-clawbot", label: "Connect Agent" },
+    { href: "/my-agents", label: "My Agents" },
 ];
 
 function linkClass(active: boolean) {
