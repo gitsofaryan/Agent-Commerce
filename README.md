@@ -284,6 +284,32 @@ npm run build
 npm start
 ```
 
+### Docker (Recommended for Vultr)
+
+Build and push from your local machine:
+
+```powershell
+cd frontend
+docker login
+./scripts/docker/build-and-push.ps1 -DockerHubUser <your-dockerhub-user> -ImageName agent-commerce -Tag latest
+```
+
+Deploy on your Vultr server (run as root):
+
+```bash
+cd /opt
+git clone https://github.com/gitsofaryan/Agent-Commerce.git || true
+cd /opt/Agent-Commerce/agent-commerce/frontend
+cp .env.production.docker.example /opt/agent-commerce/.env.production
+bash scripts/docker/deploy-vultr.sh <your-dockerhub-user>/agent-commerce:latest
+```
+
+Health check:
+
+```bash
+curl http://127.0.0.1/api/health
+```
+
 ### Solana Scripts
 
 ```bash

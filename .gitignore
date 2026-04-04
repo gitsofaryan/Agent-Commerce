@@ -17,6 +17,7 @@ coverage/
 # env files
 .env*
 frontend/.env*
+!frontend/.env.production.docker.example
 solana/.env*
 
 # logs
@@ -35,3 +36,9 @@ yarn-error.log*
 
 # local agent wallet secrets for x402 demo scripts
 frontend/scripts/agentic-x402/agents.json
+
+# local SSH keys (never commit)
+frontend/aryan
+frontend/aryan.pub
+frontend/vultr-ssh
+frontend/vultr-ssh.pub
