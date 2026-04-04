@@ -26,7 +26,8 @@ const {
 } = require("./solana-payment");
 
 const BUYER_AGENT = process.env.BUYER_AGENT_NAME || "TaskAgent";
-const SHARED_AI_WALLET_AGENT = process.env.SHARED_AI_WALLET_AGENT || "AgentPoolWallet";
+const SHARED_AI_WALLET_AGENT =
+  process.env.SHARED_AI_WALLET_AGENT || "AgentPoolWallet";
 const TASK_BUDGET_SOL = Number(process.env.TASK_BUDGET_SOL || 0.01);
 
 const MOCK_TASKS = [
@@ -75,7 +76,12 @@ function selectWinnerRandom(bids) {
   };
 }
 
-async function settleRealPayment({ buyerKeypair, recipientKeypair, amountSOL, taskId }) {
+async function settleRealPayment({
+  buyerKeypair,
+  recipientKeypair,
+  amountSOL,
+  taskId,
+}) {
   const buyerAddress = buyerKeypair.publicKey.toBase58();
   const recipientAddress = recipientKeypair.publicKey.toBase58();
 
@@ -94,7 +100,10 @@ async function settleRealPayment({ buyerKeypair, recipientKeypair, amountSOL, ta
     nonce,
   };
 
-  say("x402", `Payment Required -> recipient=${paymentChallenge.recipient}, amount=${formatSol(paymentChallenge.amountSOL)}, nonce=${paymentChallenge.nonce}`);
+  say(
+    "x402",
+    `Payment Required -> recipient=${paymentChallenge.recipient}, amount=${formatSol(paymentChallenge.amountSOL)}, nonce=${paymentChallenge.nonce}`,
+  );
 
   const txSignature = await sendPayment({
     fromKeypair: buyerKeypair,
@@ -143,19 +152,28 @@ async function runTaskAuction(task, agents) {
 
   const sharedRecipient = agents[SHARED_AI_WALLET_AGENT] || agents.BidAgent_1;
   if (!sharedRecipient) {
-    throw new Error(`Shared AI wallet agent missing: ${SHARED_AI_WALLET_AGENT}`);
+    throw new Error(
+      `Shared AI wallet agent missing: ${SHARED_AI_WALLET_AGENT}`,
+    );
   }
 
   // Exclude buyer from bidders. Bidding is fully mock for demo.
-  const bidders = ["BidAgent_1", "BidAgent_2", "BidAgent_3", "ExecutorAgent", "BrokerAgent"].filter(
-    (name) => !!agents[name] && name !== BUYER_AGENT,
-  );
+  const bidders = [
+    "BidAgent_1",
+    "BidAgent_2",
+    "BidAgent_3",
+    "ExecutorAgent",
+    "BrokerAgent",
+  ].filter((name) => !!agents[name] && name !== BUYER_AGENT);
   const mockBids = buildMockBids(task, bidders);
 
   console.log("\n--- DIALOGUE START ---");
   say("TaskAgent", `Task posted: ${task.description}`);
   say("TaskAgent", `Budget: ${formatSol(task.budgetSOL)}`);
-  say("System", `All bidders share one AI wallet address: ${sharedRecipient.publicKey}`);
+  say(
+    "System",
+    `All bidders share one AI wallet address: ${sharedRecipient.publicKey}`,
+  );
 
   say("System", "All agents now submit mock bids:");
   mockBids.forEach((bid) => {
@@ -172,7 +190,10 @@ async function runTaskAuction(task, agents) {
   say("Orchestrator(Random)", selection.rationale);
 
   // Even though a logical winner is selected, all agent identities share one wallet address.
-  say("System", `Winner payout address (shared AI wallet): ${sharedRecipient.publicKey}`);
+  say(
+    "System",
+    `Winner payout address (shared AI wallet): ${sharedRecipient.publicKey}`,
+  );
 
   const requiredBuyerBalance = Number((winner.bidAmountSOL + 0.05).toFixed(4));
   await ensureMinBalance(buyer.keypair, requiredBuyerBalance);
@@ -187,8 +208,14 @@ async function runTaskAuction(task, agents) {
   say("System", "x402 settlement complete");
   say("System", `TX: ${settlement.txSignature}`);
   say("System", `Explorer: ${settlement.explorerUrl}`);
-  say("System", `Debit wallet (${settlement.buyerAddress}) before=${settlement.buyerBefore.toFixed(6)} after=${settlement.buyerAfter.toFixed(6)} change=-${settlement.buyerDecrease.toFixed(6)} SOL`);
-  say("System", `Credit wallet (${settlement.recipientAddress}) before=${settlement.recipientBefore.toFixed(6)} after=${settlement.recipientAfter.toFixed(6)} change=+${settlement.recipientIncrease.toFixed(6)} SOL`);
+  say(
+    "System",
+    `Debit wallet (${settlement.buyerAddress}) before=${settlement.buyerBefore.toFixed(6)} after=${settlement.buyerAfter.toFixed(6)} change=-${settlement.buyerDecrease.toFixed(6)} SOL`,
+  );
+  say(
+    "System",
+    `Credit wallet (${settlement.recipientAddress}) before=${settlement.recipientBefore.toFixed(6)} after=${settlement.recipientAfter.toFixed(6)} change=+${settlement.recipientIncrease.toFixed(6)} SOL`,
+  );
   console.log("--- DIALOGUE END ---");
 
   return {
@@ -207,7 +234,9 @@ async function main() {
   }
 
   console.log("Agentic commerce demo");
-  console.log("Mode: dialogue + mock bidding + random winner + x402 + real Solana payment");
+  console.log(
+    "Mode: dialogue + mock bidding + random winner + x402 + real Solana payment",
+  );
 
   const results = [];
   for (const task of MOCK_TASKS) {
