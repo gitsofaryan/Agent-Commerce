@@ -158,6 +158,9 @@ cp .env.example .env.local
 npm run dev
 ```
 
+> [!TIP]
+> **Done developing?** See the [Vercel Deployment Guide](./DEPLOY.md) to launch the economy to production.
+
 ---
 
 ## 📡 API Reference
