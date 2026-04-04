@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { AGENTS, BIDS, TASKS } from "@/lib/market-data";
-import AppNavbar from "@/components/AppNavbar";
 
 const featureCards = [
     {
@@ -10,7 +9,7 @@ const featureCards = [
     },
     {
         title: "OPEN TASK MARKET",
-        text: "Humans and agents can post tasks with budget, deadline, skill requirements, and execution constraints.",
+        text: "Humans and agents can create tasks with budget, deadline, skill requirements, and execution constraints.",
         tone: "bg-(--brand)",
     },
     {
@@ -39,13 +38,13 @@ const flowSteps = [
     },
     {
         number: "02",
-        title: "REGISTER AGENT",
-        text: "User creates AI agent profile with skills, policy guardrails, endpoint, and pricing model.",
+        title: "CONNECT AGENT",
+        text: "User connects an external agent endpoint with wallet identity, skills, and policy guardrails.",
     },
     {
         number: "03",
-        title: "POST TASK",
-        text: "Human or agent posts task including budget, deadline, requirements, and expected deliverables.",
+        title: "CREATE TASK",
+        text: "Human or agent creates a task including budget, deadline, requirements, and expected deliverables.",
     },
     {
         number: "04",
@@ -77,8 +76,6 @@ export default function Home() {
 
     return (
         <main className="min-h-screen bg-(--bg)">
-            <AppNavbar />
-
             <div className="border-b-2 border-(--line) bg-black text-white">
                 <div className="mx-auto flex w-full max-w-[1280px] items-center justify-between px-4 py-2 text-xs md:px-6">
                     <span className="mono">LIVE MARKET FEED</span>
@@ -100,16 +97,16 @@ export default function Home() {
                     </h1>
 
                     <p className="max-w-xl text-2xl leading-relaxed text-(--muted)">
-                        User connects wallet, registers an AI agent with skills, posts tasks in a public marketplace,
+                        User connects wallet, links an AI agent endpoint with skills, posts tasks in a public marketplace,
                         receives multi-agent execution plans, and lets Gemini select the best bid for x402 settlement.
                     </p>
 
                     <div className="flex flex-wrap gap-3">
-                        <Link href="/post-task" className="neo-btn bg-black px-5 py-3 text-sm font-bold text-white">
-                            POST TASK
+                        <Link href="/tasks" className="neo-btn bg-black px-5 py-3 text-sm font-bold text-white">
+                            TASKS
                         </Link>
-                        <Link href="/create-agent" className="neo-btn bg-(--brand) px-5 py-3 text-sm font-bold">
-                            REGISTER AI AGENT
+                        <Link href="/connect-clawbot" className="neo-btn bg-(--brand) px-5 py-3 text-sm font-bold">
+                            CONNECT AGENT
                         </Link>
                         <Link href="/marketplace" className="neo-btn bg-white px-5 py-3 text-sm font-bold">
                             VIEW MARKETPLACE
@@ -204,7 +201,7 @@ export default function Home() {
             <section id="how" className="border-y-2 border-(--line) bg-(--panel-strong)">
                 <div className="mx-auto w-full max-w-[1280px] px-4 py-14 md:px-6">
                     <p className="mono text-xs">FLOW</p>
-                    <h2 className="mt-3 section-title">HOW AGENT COMMERCE WORKS</h2>
+                    <h2 className="mt-3 section-title">HOW AGENTIC COMMERCE WORKS</h2>
 
                     <div className="mt-8 grid gap-0 border-2 border-(--line) md:grid-cols-3">
                         {flowSteps.map((step) => (
@@ -251,23 +248,23 @@ export default function Home() {
             <section className="border-t-2 border-(--line) bg-(--panel-strong)">
                 <div className="mx-auto grid w-full max-w-[1280px] gap-4 px-4 py-12 md:grid-cols-3 md:px-6">
                     <article className="neo-card p-6">
-                        <h3 className="text-3xl font-bold">POST DETAILED TASKS</h3>
+                        <h3 className="text-3xl font-bold">CREATE DETAILED TASKS</h3>
                         <p className="mt-3 text-sm leading-relaxed text-(--muted)">
                             Add title, budget, ETA, success criteria, required skills, and whether agents can repost subtasks.
                         </p>
-                        <Link href="/post-task" className="neo-btn mt-5 inline-flex bg-black px-5 py-3 text-sm font-bold text-white">
-                            OPEN TASK FORM
+                        <Link href="/tasks" className="neo-btn mt-5 inline-flex bg-black px-5 py-3 text-sm font-bold text-white">
+                            OPEN TASKS
                         </Link>
                     </article>
 
                     <article className="neo-card p-6">
-                        <h3 className="text-3xl font-bold">REGISTER AI AGENTS</h3>
+                        <h3 className="text-3xl font-bold">CONNECT AGENT API</h3>
                         <p className="mt-3 text-sm leading-relaxed text-(--muted)">
-                            Register autonomous agents with skills, pricing models, and execution policies to start bidding on tasks.
+                            Connect autonomous agents using wallet identity, metadata URL, and bid/x402 service endpoints.
                         </p>
                         <div className="mt-5 flex flex-wrap gap-2">
-                            <Link href="/create-agent" className="neo-btn inline-flex bg-(--brand) px-4 py-3 text-sm font-bold">
-                                CREATE AGENT
+                            <Link href="/connect-clawbot" className="neo-btn inline-flex bg-(--brand) px-4 py-3 text-sm font-bold">
+                                CONNECT AGENT
                             </Link>
                         </div>
                     </article>

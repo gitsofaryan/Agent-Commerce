@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import ChatPanel from "../components/ChatPanel";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import TaskPipeline from "../components/TaskPipeline";
 
 interface Agent {
@@ -29,11 +29,36 @@ interface Transaction {
   timestamp: string;
 }
 
+interface PlatformWalletInfo {
+  wallet_address: string | null;
+  balance: number;
+  network: string;
+}
+
+interface TaskListResponse {
+  tasks?: Array<{ id: string }>;
+}
+
+interface WalletRow {
+  wallet_address: string | null;
+  balance?: number;
+}
+
+interface WalletSnapshotResponse {
+  success?: boolean;
+  wallets?: WalletRow[];
+  platform?: PlatformWalletInfo;
+  error?: string;
+}
+
 const EVENT_ICONS: Record<string, string> = {
   thinking: "\u{1F9E0}",
+  interest: "\u{1F4AC}",
   plan: "\u{1F4CB}",
   bidding: "\u{1F4B0}",
   bid_received: "\u{1F3F7}\uFE0F",
+  selected: "\u{1F3C6}",
+  gemini: "\u2728",
   assigned: "\u2705",
   complete: "\u{1F389}",
   no_bids: "\u26A0\uFE0F",
@@ -57,6 +82,7 @@ const EVENT_ICONS: Record<string, string> = {
   payment_required: "\u{1F510}",
   payment_verified: "\u2705",
   payment_completed: "\u{1F4B8}",
+  agent_to_agent: "\u{1F91D}",
   service_executing: "\u2699\uFE0F",
   demo: "\u{1F3AC}",
 };
@@ -129,15 +155,18 @@ function formatEventData(data: Record<string, unknown>): React.ReactNode {
 }
 
 export default function Dashboard() {
+  const { connection } = useConnection();
+  const { publicKey, connected } = useWallet();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [taskInput, setTaskInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [taskCount, setTaskCount] = useState(0);
   const [totalSpent, setTotalSpent] = useState(0);
   const [walletsInitialized, setWalletsInitialized] = useState(false);
   const [initializingWallets, setInitializingWallets] = useState(false);
+  const [platformWallet, setPlatformWallet] = useState<PlatformWalletInfo | null>(null);
+  const [connectedWalletBalance, setConnectedWalletBalance] = useState<number | null>(null);
   const eventsContainerRef = useRef<HTMLDivElement>(null);
   const lastEventTimestamp = useRef<string>("");
 
@@ -156,15 +185,39 @@ export default function Dashboard() {
   }, [fetchAgents]);
 
   useEffect(() => {
-    fetch("/api/wallets")
-      .then((r) => r.json())
-      .then((data) => {
-        const wallets = data.wallets || data;
-        if (Array.isArray(wallets) && wallets.length > 0 && wallets[0].wallet_address) {
-          setWalletsInitialized(true);
-        }
-      })
-      .catch(() => { });
+    const refreshWalletSnapshot = () => {
+      fetch("/api/wallets")
+        .then((r) => r.json())
+        .then((data: WalletSnapshotResponse) => {
+          const wallets = Array.isArray(data.wallets) ? data.wallets : [];
+          if (wallets.some((row) => !!row.wallet_address)) {
+            setWalletsInitialized(true);
+          }
+          if (data.platform) {
+            setPlatformWallet(data.platform);
+          }
+        })
+        .catch(() => { });
+    };
+
+    const refreshTaskCount = () => {
+      fetch("/api/tasks")
+        .then((r) => r.json())
+        .then((data: TaskListResponse) => {
+          const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+          setTaskCount(tasks.length);
+        })
+        .catch(() => { });
+    };
+
+    refreshWalletSnapshot();
+    refreshTaskCount();
+    const interval = setInterval(refreshWalletSnapshot, 10000);
+    const taskInterval = setInterval(refreshTaskCount, 5000);
+    return () => {
+      clearInterval(interval);
+      clearInterval(taskInterval);
+    };
   }, []);
 
   // Poll for events instead of SSE
@@ -189,23 +242,33 @@ export default function Dashboard() {
               event.type === "x402.payment_verified";
 
             if (isPaymentEvent) {
+              const paymentAmount = Number(event.data.amount_sol || event.data.bid_price || 0);
               hasPayment = true;
               setTransactions((prev) => [
                 ...prev,
                 {
                   from: String(event.data.from || event.data.payer || event.data.agent_name || ""),
                   to: String(event.data.to || event.data.recipient || ""),
-                  amount_sol: Number(event.data.amount_sol || event.data.bid_price || 0),
+                  amount_sol: paymentAmount,
                   signature: String(event.data.signature || event.data.payment_signature || ""),
                   explorer_url: String(event.data.explorer_url || (event.data.signature ? `https://explorer.solana.com/tx/${event.data.signature}?cluster=devnet` : "")),
                   timestamp: event.timestamp,
                 },
               ]);
+              setTotalSpent((s) => s + paymentAmount);
+
+              fetch("/api/wallets")
+                .then((r) => r.json())
+                .then((data: WalletSnapshotResponse) => {
+                  if (data.platform) {
+                    setPlatformWallet(data.platform);
+                  }
+                })
+                .catch(() => { });
             }
 
             if (event.type === "orchestrator.complete") {
               setTaskCount((c) => c + 1);
-              setTotalSpent((s) => s + Number(event.data.total_cost || 0));
             }
           }
 
@@ -224,12 +287,61 @@ export default function Dashboard() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [events]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshConnectedWalletBalance = async () => {
+      if (!connected || !publicKey) {
+        if (!cancelled) setConnectedWalletBalance(null);
+        return;
+      }
+
+      try {
+        const lamports = await connection.getBalance(publicKey, "confirmed");
+        if (!cancelled) {
+          setConnectedWalletBalance(Number((lamports / 1e9).toFixed(4)));
+        }
+      } catch {
+        if (!cancelled) setConnectedWalletBalance(null);
+      }
+    };
+
+    void refreshConnectedWalletBalance();
+    const timer = setInterval(() => {
+      void refreshConnectedWalletBalance();
+    }, 10000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [connected, publicKey, connection]);
+
   const initWallets = async () => {
     setInitializingWallets(true);
     try {
       const res = await fetch("/api/wallets/init", { method: "POST" });
-      const data = await res.json();
-      if (data.wallets || data.success !== false) {
+      const raw = await res.text();
+      let data: Record<string, unknown> = {};
+      if (raw.trim().length > 0) {
+        try {
+          data = JSON.parse(raw) as Record<string, unknown>;
+        } catch {
+          data = { error: raw };
+        }
+      }
+
+      if (!res.ok) {
+        throw new Error(String(data.error || `Wallet init failed with status ${res.status}`));
+      }
+
+      const payload = data as unknown as WalletSnapshotResponse;
+      if (payload.platform) {
+        setPlatformWallet(payload.platform);
+      }
+
+      const wallets = Array.isArray(payload.wallets) ? payload.wallets : [];
+      if (wallets.some((row) => !!row.wallet_address) || data.success !== false) {
         setWalletsInitialized(true);
         fetchAgents(true);
       }
@@ -239,39 +351,65 @@ export default function Dashboard() {
     setInitializingWallets(false);
   };
 
-  const submitTask = async () => {
-    if (!taskInput.trim()) return;
-    setIsSubmitting(true);
-    try {
-      await fetch("/api/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description: taskInput }),
-      });
-      setTaskInput("");
-    } catch (err) {
-      console.error("Failed:", err);
-    }
-    setIsSubmitting(false);
+  const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const runAIAgentOrchestration = async (taskId: string) => {
+    // OPEN -> BIDDING
+    await fetch(`/api/tasks/${taskId}/bid`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "start" }),
+    });
+
+    await pause(900);
+
+    // BIDDING -> SELECTION (also emits interest + bid events)
+    await fetch(`/api/tasks/${taskId}/bid`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "close" }),
+    });
+
+    await pause(900);
+
+    // SELECTION -> EXECUTION (Gemini selects best bid)
+    await fetch(`/api/tasks/${taskId}/select`, {
+      method: "POST",
+    });
+
+    await pause(900);
+
+    // EXECUTION -> COMPLETED (x402 + agent-to-agent payment)
+    await fetch(`/api/tasks/${taskId}/execute`, {
+      method: "POST",
+    });
   };
 
   const quickTask = async (description: string) => {
-    setTaskInput(description);
     setIsSubmitting(true);
     try {
-      await fetch("/api/tasks", {
+      const createRes = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description }),
+        body: JSON.stringify({
+          description,
+          createdByType: "agent",
+          createdById: "researchagent-7",
+        }),
       });
+
+      const createData = await createRes.json();
+      const taskId = createData?.data?.id as string | undefined;
+      if (createRes.ok && taskId) {
+        await runAIAgentOrchestration(taskId);
+      }
     } catch (err) {
       console.error("Failed:", err);
     }
     setIsSubmitting(false);
-    setTaskInput("");
   };
 
-  const activeAgents = agents.filter((a) => a.status === "working").length;
+  const activeAgents = agents.filter((a) => a.wallet_address).length;
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: "var(--bg)" }}>
@@ -296,6 +434,16 @@ export default function Dashboard() {
               <p className="text-xs mono" style={{ color: "var(--muted)" }}>Active</p>
               <p className="mono font-bold">{activeAgents}/{agents.length}</p>
             </div>
+            <div className="text-center">
+              <p className="text-xs mono" style={{ color: "var(--muted)" }}>Devnet Wallet</p>
+              <p className="mono font-bold">
+                {connectedWalletBalance !== null
+                  ? `${connectedWalletBalance.toFixed(4)} SOL`
+                  : platformWallet
+                    ? `${platformWallet.balance.toFixed(4)} SOL`
+                    : "--"}
+              </p>
+            </div>
           </div>
         </div>
       </header>
@@ -306,7 +454,10 @@ export default function Dashboard() {
           <div className="neo-card p-6 flex items-center justify-between mb-6" style={{ backgroundColor: "var(--panel-strong)" }}>
             <div>
               <h3 className="font-bold" style={{ color: "var(--brand)" }}>Initialize Agent Wallets</h3>
-              <p className="text-sm mono mt-1" style={{ color: "var(--muted)" }}>Create devnet wallets and airdrop test SOL</p>
+              <p className="text-sm mono mt-1" style={{ color: "var(--muted)" }}>
+                Create devnet wallets and airdrop test SOL
+                {platformWallet?.wallet_address ? ` • Treasury ${truncateAddress(platformWallet.wallet_address)}` : ""}
+              </p>
             </div>
             <button
               onClick={initWallets}
@@ -319,47 +470,53 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Task Input */}
-        <div className="neo-card p-6" style={{ backgroundColor: "var(--panel-strong)" }}>
-          <div className="flex gap-3">
-            <input
-              type="text"
-              value={taskInput}
-              onChange={(e) => setTaskInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && submitTask()}
-              placeholder="Describe a task..."
-              className="flex-1 neo-pill px-4 py-2"
-              style={{ background: "var(--bg)", color: "var(--ink)" }}
-            />
-            <button
-              onClick={submitTask}
-              disabled={isSubmitting || !taskInput.trim()}
-              className="neo-btn px-6 py-2 font-bold mono"
-              style={{ background: "var(--accent)", color: "var(--ink)" }}
-            >
-              {isSubmitting ? "Running..." : "Submit"}
-            </button>
+        {/* LIVE ACTIVITY - TOP */}
+        <div>
+          <h2 className="text-sm mono font-bold mb-3" style={{ color: "var(--muted)" }}>LIVE ACTIVITY</h2>
+          <p className="text-xs mono mb-2" style={{ color: "var(--muted)" }}>
+            Interactive flow: AI task submit | interest comments | bidding | Gemini selection | agent-to-agent payment
+          </p>
+          <div
+            ref={eventsContainerRef}
+            className="neo-card p-4 space-y-2 max-h-80 overflow-y-auto"
+            style={{ backgroundColor: "var(--panel)" }}
+          >
+            {events.length === 0 ? (
+              <p className="text-xs mono" style={{ color: "var(--muted)" }}>Waiting for agents...</p>
+            ) : (
+              events.map((event, idx) => (
+                <div key={idx} className="text-xs mono flex items-start gap-2 pb-2 border-b" style={{ borderColor: "var(--line)" }}>
+                  <span>{getEventIcon(event.type)}</span>
+                  <div className="flex-1">
+                    <span style={{ color: "var(--brand)" }}>{event.type}</span> {formatEventData(event.data as Record<string, unknown>)}
+                    <div style={{ color: "var(--muted)" }} className="text-[10px]">{new Date(event.timestamp).toLocaleTimeString()}</div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
         {/* Quick Demo Tasks */}
         <div className="space-y-2">
-          <h3 className="text-sm font-bold mono" style={{ color: "var(--muted)" }}>Quick Tasks</h3>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+          <h3 className="text-sm font-bold mono" style={{ color: "var(--muted)" }}>TASK PIPELINE</h3>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             {[
-              { label: "\u{1F50D} Find DeFi", task: "Find npm packages for Solana DeFi" },
-              { label: "\u{1F3E2} Book Room", task: "Book a meeting room at Frontier Tower" },
-              { label: "\u{1F4CA} Analyze Trade", task: "Analyze SOL/USDC and execute limit order" },
-              { label: "\u{1F91D} Find Expert", task: "Find robotics and computer vision expert" },
-            ].map((item, i) => (
+              "Liquidity pool rebalancer",
+              "Twitter sentiment analysis bot",
+              "Smart contract audit report",
+              "NFT metadata scraper & analyzer",
+            ].map((task, i) => (
               <button
                 key={i}
-                onClick={() => quickTask(item.task)}
+                onClick={() => quickTask(task)}
                 disabled={isSubmitting}
-                className="neo-btn neo-pill py-3 text-xs font-bold"
-                style={{ background: "var(--panel)", color: "var(--ink)" }}
+                className="neo-card p-4 text-left hover:shadow-lg transition-all"
+                style={{ backgroundColor: "var(--panel-strong)" }}
               >
-                {item.label}
+                <p className="font-bold text-sm">{task}</p>
+                <p className="text-xs mono mt-2" style={{ color: "var(--muted)" }}>AI AGENT SUBMITS</p>
+                <p className="text-xs font-bold mt-1" style={{ color: "var(--brand)" }}>→ INTEREST → BIDDING → GEMINI SELECTS → PAY</p>
               </button>
             ))}
           </div>
@@ -367,101 +524,6 @@ export default function Dashboard() {
 
         {/* Task Pipeline - Manual Flow Control */}
         <TaskPipeline />
-
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Agents Sidebar */}
-          <div className="lg:col-span-1 space-y-3">
-            <h2 className="text-sm font-bold mono" style={{ color: "var(--muted)" }}>AGENTS</h2>
-            {agents.map((agent) => (
-              <div key={agent.agent_id} className="neo-card p-4" style={{ backgroundColor: "var(--panel)" }}>
-                <div className="flex items-start justify-between mb-2">
-                  <h3 className="font-bold text-sm">{agent.name}</h3>
-                  <span className="neo-pill text-xs" style={{ background: agent.status === "working" ? "var(--brand)" : "var(--accent)" }}>
-                    {agent.status}
-                  </span>
-                </div>
-                <p className="text-xs mono" style={{ color: "var(--muted)" }} >
-                  {agent.description}
-                </p>
-                <div className="mt-2 text-xs mono">
-                  <p style={{ color: "var(--muted)" }}>{agent.wallet_address ? truncateAddress(agent.wallet_address) : "No wallet"}</p>
-                  <p className="font-bold">{agent.balance.toFixed(4)} SOL</p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Main Content */}
-          <div className="lg:col-span-3 space-y-6">
-            {/* Activity Feed */}
-            <div>
-              <h2 className="text-sm font-bold mono mb-3" style={{ color: "var(--muted)" }}>LIVE ACTIVITY</h2>
-              <div ref={eventsContainerRef} className="neo-card p-4 h-125 overflow-y-auto space-y-1" style={{ backgroundColor: "var(--panel)" }}>
-                {events.length === 0 && (
-                  <div className="flex items-center justify-center h-full text-center">
-                    <div>
-                      <p className="text-2xl mb-2">{"\u{1F916}"}</p>
-                      <p className="text-sm font-bold">No activity</p>
-                      <p className="text-xs mono" style={{ color: "var(--muted)" }}>Submit a task to see agents in action</p>
-                    </div>
-                  </div>
-                )}
-                {events.map((event, i) => (
-                  <div key={i} className="neo-pill p-2 text-xs animate-fade-in">
-                    <div className="flex gap-2 items-start">
-                      <span className="text-base">{getEventIcon(event.type)}</span>
-                      <div className="flex-1">
-                        <p className="font-bold">{String(event.data.agent_name || "System")}</p>
-                        <p style={{ color: "var(--muted)" }}>{formatEventData(event.data)}</p>
-                        <p className="mono text-[11px]" style={{ color: "var(--muted)" }}>{new Date(event.timestamp).toLocaleTimeString()}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Chat Panel */}
-            <ChatPanel />
-
-            {/* Transactions */}
-            {transactions.length > 0 && (
-              <div>
-                <h2 className="text-sm font-bold mono mb-3" style={{ color: "var(--muted)" }}>SOLANA TRANSACTIONS</h2>
-                <div className="neo-card overflow-hidden" style={{ backgroundColor: "var(--panel)" }}>
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr style={{ borderBottom: "2px solid var(--line)" }}>
-                        <th className="text-left px-4 py-3 font-bold">From</th>
-                        <th className="text-left px-4 py-3 font-bold">To</th>
-                        <th className="text-right px-4 py-3 font-bold">Amount</th>
-                        <th className="text-right px-4 py-3 font-bold">Tx</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {transactions.map((tx, i) => (
-                        <tr key={i} style={{ borderBottom: "1px solid var(--line)" }}>
-                          <td className="px-4 py-2 mono">{truncateAddress(tx.from)}</td>
-                          <td className="px-4 py-2 mono">{truncateAddress(tx.to)}</td>
-                          <td className="px-4 py-2 text-right mono font-bold">{tx.amount_sol.toFixed(4)} SOL</td>
-                          <td className="px-4 py-2 text-right">
-                            {tx.explorer_url ? (
-                              <a href={tx.explorer_url} target="_blank" rel="noopener noreferrer" className="neo-pill text-[10px]">
-                                View
-                              </a>
-                            ) : (
-                              <span>{"\u2014"}</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
       </main>
     </div>
   );
