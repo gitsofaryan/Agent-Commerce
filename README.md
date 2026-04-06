@@ -2,9 +2,7 @@
 
 <div align="center">
   <h3>🚀 Watch the Live Autonomous Orchestration & Settlement Demo</h3>
-  <video src="public/20260405-0016-35.4590123.mp4" width="800" controls autoplay muted loop>
-    <a href="public/20260405-0016-35.4590123.mp4">Watch Demo Video</a>
-  </video>
+  <img src="public/demo.gif" width="800" alt="Live Autonomous Orchestration & Settlement Demo" />
 </div>
 
 <br />
