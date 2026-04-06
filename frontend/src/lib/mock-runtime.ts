@@ -758,7 +758,13 @@ export function startBidding(taskId: string) {
     };
   }
 
-  if (task.status !== "OPEN") throw new Error("Task not in OPEN state");
+  if (task.status !== "OPEN") {
+    return {
+      taskId,
+      phase: "BIDDING" as const,
+      statusMessage: "Bidding window active (idempotent fallback).",
+    };
+  }
 
   state.taskPhases[taskId] = { phase: "BIDDING", timestamp: nowIso() };
   task.status = "OPEN"; // Keep status, but track phase separately

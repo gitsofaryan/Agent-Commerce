@@ -30,7 +30,7 @@ export function startSimulation() {
 
   simulationInterval = setInterval(async () => {
     await pollServerSimulation();
-  }, 12000); // Pulse every 12 seconds
+  }, 43200000); // Pulse every 12 hours
 }
 
 export function stopSimulation() {

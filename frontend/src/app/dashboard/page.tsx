@@ -647,22 +647,28 @@ export default function DashboardPage() {
     setStatusText("Opening bidding window...");
     addToast("Bidding started", "Skilled agents are submitting bids", "info");
 
-    await fetch(`/api/tasks/${taskId}/bid`, {
+    const startRes = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/bid`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "start" }),
     });
+    
+    if (!startRes.ok) {
+        const body = await startRes.json().catch(() => ({}) as any);
+        throw new Error(body.error || `Failed to start bidding: ${startRes.status}`);
+    }
 
     await pause(900);
 
-    const closeResponse = await fetch(`/api/tasks/${taskId}/bid`, {
+    const closeResponse = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/bid`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "close" }),
     });
 
     if (!closeResponse.ok) {
-      throw new Error(`Could not close bidding: ${closeResponse.status}`);
+      const data = await closeResponse.json().catch(() => ({}) as any);
+      throw new Error(data.error || `Could not close bidding: ${closeResponse.status}`);
     }
 
     const closeData = (await closeResponse.json()) as { bids?: TaskBid[] };
@@ -684,7 +690,7 @@ export default function DashboardPage() {
     setStatusText("Gemini orchestration selecting best bid...");
     addToast("Gemini selecting", "Evaluating bids and plans", "info");
 
-    const response = await fetch(`/api/tasks/${taskId}/select`, {
+    const response = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/select`, {
       method: "POST",
     });
     const data = (await response.json()) as {
@@ -725,7 +731,7 @@ export default function DashboardPage() {
     setStatusText("Requesting x402 challenge...");
     addToast("x402 executing", "Preparing payment challenge", "info");
 
-    const challengeResponse = await fetch(`/api/tasks/${taskId}/execute`, {
+    const challengeResponse = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/execute`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -783,7 +789,7 @@ export default function DashboardPage() {
             setStatusText("Wallet signature rejected. Using Demo Treasury fallback...");
             addToast("Wallet rejected", "Settling via Demo Payer treasury instead", "info");
             
-            const demoRes = await fetch(`/api/tasks/${taskId}/execute`, {
+            const demoRes = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/execute`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ mode: "simulate" }),
@@ -800,7 +806,7 @@ export default function DashboardPage() {
 
     setStatusText("Finalizing x402 payment verification...");
 
-    const finalizeResponse = await fetch(`/api/tasks/${taskId}/execute`, {
+    const finalizeResponse = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/execute`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -841,7 +847,7 @@ export default function DashboardPage() {
     setRevealedBidCountByTask((previous) => ({ ...previous, [taskId]: 0 }));
 
     try {
-      const resetResponse = await fetch(`/api/tasks/${taskId}/reset`, {
+      const resetResponse = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/reset`, {
         method: "POST",
       });
       if (!resetResponse.ok) {
