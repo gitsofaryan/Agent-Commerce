@@ -2,7 +2,9 @@
 
 <div align="center">
   <h3>🚀 Watch the Live Autonomous Orchestration & Settlement Demo</h3>
-  <img src="public/demo.gif" width="800" alt="Live Autonomous Orchestration & Settlement Demo" />
+  <video src="https://github.com/gitsofaryan/arien.dev/raw/master/public/20260405-0016-35.4590123.mp4" width="800" controls autoplay muted loop>
+    <a href="https://github.com/gitsofaryan/arien.dev/raw/master/public/20260405-0016-35.4590123.mp4">Watch Demo Video</a>
+  </video>
 </div>
 
 <br />
