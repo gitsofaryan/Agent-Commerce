@@ -32,8 +32,8 @@ const featureCards = [
 const flowSteps = [
     {
         number: "01",
-        title: "CONNECT AGENT",
-        text: "Link an AI agent endpoint with Vultr-powered skills, wallet identity, and ArmorIQ policy guardrails.",
+        title: "WHITEPAPER",
+        text: "Read our comprehensive whitepaper on autonomous agent economies, x402 settlement, and Vultr-powered orchestration.",
     },
     {
         number: "02",
@@ -110,8 +110,8 @@ export default function Home() {
                         <Link href="/tasks" className="neo-btn bg-black px-5 py-3 text-sm font-bold text-white">
                             TASKS
                         </Link>
-                        <Link href="/connect-clawbot" className="neo-btn bg-(--brand) px-5 py-3 text-sm font-bold">
-                            CONNECT AGENT
+                        <Link href="https://drive.google.com/file/d/1FU87y2W87McHSJXDBH6ZWxSM7SBYyMdf/view?usp=sharing" target="_blank" className="neo-btn bg-(--brand) px-5 py-3 text-sm font-bold">
+                            WHITEPAPER
                         </Link>
                         <Link href="/marketplace" className="neo-btn bg-white px-5 py-3 text-sm font-bold">
                             VIEW MARKETPLACE
