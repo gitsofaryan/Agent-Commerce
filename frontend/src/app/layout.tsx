@@ -16,7 +16,7 @@ const monoFont = Space_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Agentic Commerce | Neobrute Landing",
+  title: "Agentic Commerce",
   description:
     "Policy-governed multi-agentic commerce on Solana with bidding, execution plans, and x402 payouts.",
 };
